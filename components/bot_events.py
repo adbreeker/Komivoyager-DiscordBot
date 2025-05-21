@@ -2,6 +2,7 @@ import discord
 import asyncio
 from discord.ext import voice_recv
 import components.voice_transcriber as voice_transcriber
+from components.voice_utils import play_quiet_noise
 
 def setup_events(bot):
     @bot.event
@@ -29,6 +30,7 @@ def setup_events(bot):
                 await asyncio.sleep(0.5)
                 if len(after.channel.members) >= 0 and not voice_client:
                     vc = await after.channel.connect(cls=voice_recv.VoiceRecvClient)
+                    bot.loop.create_task(play_quiet_noise(vc))
                     if voice_transcriber.is_transcribing(guild_id):
                         await voice_transcriber.start_recording(vc)
 

@@ -75,35 +75,38 @@ class WhisperSink(voice_recv.BasicSink):
         user_names[key] = user_name
 
     def process_buffer(self, guild_id, user_id, user_name, buffer_data):
-        raw = buffer_data
-        audio_data = np.frombuffer(raw, np.int16)
-        if audio_data.ndim == 1 and len(audio_data) % 2 == 0:
-            audio_data = audio_data.reshape(-1, 2)
-            audio_data = audio_data.mean(axis=1)
-        audio_data = audio_data.astype(np.float32) / 32768.0
-        gain = 15.0
-        audio_data = np.clip(audio_data * gain, -1.0, 1.0)
-        orig_sr = 48000
-        target_sr = 16000
-        if len(audio_data) > 0 and orig_sr != target_sr:
-            num_samples = int(len(audio_data) * target_sr / orig_sr)
-            audio_data = resample(audio_data, num_samples)
+        try:
+            raw = buffer_data
+            audio_data = np.frombuffer(raw, np.int16)
+            if audio_data.ndim == 1 and len(audio_data) % 2 == 0:
+                audio_data = audio_data.reshape(-1, 2)
+                audio_data = audio_data.mean(axis=1)
+            audio_data = audio_data.astype(np.float32) / 32768.0
+            gain = 15.0
+            audio_data = np.clip(audio_data * gain, -1.0, 1.0)
+            orig_sr = 48000
+            target_sr = 16000
+            if len(audio_data) > 0 and orig_sr != target_sr:
+                num_samples = int(len(audio_data) * target_sr / orig_sr)
+                audio_data = resample(audio_data, num_samples)
 
-        segments, _ = whisper_model.transcribe(
-            audio_data,
-            language="pl",
-            temperature=0.2,
-            beam_size=10,
-            condition_on_previous_text=False,
-            without_timestamps=True
-        )
-        text = "".join([s.text for s in segments]).strip()
-        if text and guild_id:
-            bingo_handler.queue_bingo_check(text, user_name, guild_id)
-            file_path = get_transcript_file(guild_id)
-            now_str = datetime.now().strftime("%H:%M:%S")
-            with open(file_path, "a", encoding="utf-8") as f:
-                f.write(f"{now_str} - {user_name}: {text}\n")
+            segments, _ = whisper_model.transcribe(
+                audio_data,
+                language="pl",
+                temperature=0.2,
+                beam_size=10,
+                condition_on_previous_text=False,
+                without_timestamps=True
+            )
+            text = "".join([s.text for s in segments]).strip()
+            if text and guild_id:
+                bingo_handler.queue_bingo_check(text, user_name, guild_id)
+                file_path = get_transcript_file(guild_id)
+                now_str = datetime.now().strftime("%H:%M:%S")
+                with open(file_path, "a", encoding="utf-8") as f:
+                    f.write(f"{now_str} - {user_name}: {text}\n")
+        except Exception as e:
+            print(f"[ERROR] Exception in process_buffer for {user_name} ({guild_id}): {e}")
 
 # Create a dictionary to hold per-user executors
 user_executors = {}
@@ -125,9 +128,11 @@ def silence_watcher():
                 buffer_copy = user_audio_buffers[key]
                 user_audio_buffers[key] = b""
                 user_name = user_names.get(key, "unknown")
-                # Submit to a per-user executor so each user's audio is processed in its own thread
                 executor = get_user_executor(user_id)
-                executor.submit(WhisperSink().process_buffer, guild_id, user_id, user_name, buffer_copy)
+                try:
+                    executor.submit(WhisperSink().process_buffer, guild_id, user_id, user_name, buffer_copy)
+                except Exception as e:
+                    print(f"[ERROR] Failed to submit process_buffer for {user_name} ({guild_id}): {e}")
         time.sleep(0.2)
 
 threading.Thread(target=silence_watcher, daemon=True).start()
