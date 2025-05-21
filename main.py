@@ -21,6 +21,8 @@ bot = commands.Bot(command_prefix='@@', intents=intents)
 async def on_ready():
     print(f'Logged in as {bot.user.name} - {bot.user.id}')
     print('------')
+    activity = discord.Game("Ready to solve your np-hard problems | @@help")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
 
 @bot.event
 async def on_member_join(member):
