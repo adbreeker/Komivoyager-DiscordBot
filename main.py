@@ -19,8 +19,11 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="@@", intents=intents)
-
 bingo_handler.set_bot(bot)
+
+@bot.event
+async def setup_hook():
+    bingo_handler.start_bingo_worker()
 
 @bot.event
 async def on_ready():

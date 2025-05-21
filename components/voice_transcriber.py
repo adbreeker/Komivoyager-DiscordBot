@@ -94,6 +94,7 @@ class WhisperSink(voice_recv.BasicSink):
         )
         text = "".join([s.text for s in segments]).strip()
         if text and guild_id:
+            bingo_handler.queue_bingo_check(text, user_name, guild_id)
             file_path = get_transcript_file(guild_id)
             now_str = datetime.now().strftime("%H:%M:%S")
             with open(file_path, "a", encoding="utf-8") as f:
