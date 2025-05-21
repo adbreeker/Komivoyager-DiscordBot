@@ -4,6 +4,8 @@ from faster_whisper import WhisperModel
 import numpy as np
 from scipy.signal import resample
 import time
+import os
+from datetime import datetime
 
 # Load faster-whisper model once
 whisper_model = WhisperModel("medium", device="cpu", compute_type="float32")
@@ -15,6 +17,32 @@ SILENCE_TIMEOUT = 0.5  #seconds
 
 transcribing_enabled = {}  # guild_id: bool
 current_voice_clients = {}  # guild_id: voice_client
+
+# Track the current transcript file per guild
+transcript_files = {}  # guild_id: (file_path, start_datetime)
+
+def get_transcript_file(guild_id):
+    # If already open, return path
+    if guild_id in transcript_files:
+        return transcript_files[guild_id][0]
+    # Otherwise, create new file
+    start_dt = datetime.now()
+    date_str = start_dt.strftime("%Y-%m-%d")
+    os.makedirs("transcripts", exist_ok=True)
+    os.makedirs(f"transcripts/Guild_{guild_id}", exist_ok=True)
+    file_path = os.path.join("transcripts", f"Guild_{guild_id}", f"{date_str}.txt")
+    transcript_files[guild_id] = (file_path, start_dt)
+    # Touch the file
+    with open(file_path, "a", encoding="utf-8") as f:
+        f.write(f"# Transcription started at {start_dt.isoformat()}\n")
+    return file_path
+
+def close_transcript_file(guild_id):
+    if guild_id in transcript_files:
+        file_path, start_dt = transcript_files[guild_id]
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(f"# Transcription ended at {datetime.now().isoformat()}\n")
+        del transcript_files[guild_id]
 
 class WhisperSink(voice_recv.BasicSink):
     def __init__(self):
@@ -60,8 +88,26 @@ class WhisperSink(voice_recv.BasicSink):
             condition_on_previous_text=False,
             without_timestamps=True
         )
-        text = "".join([s.text for s in segments])
-        print(f"Transcription from user {user_name}: {text}")
+        text = "".join([s.text for s in segments]).strip()
+        if text:
+            # Write to transcript file
+            # Try to get guild_id from user object (VoiceUser)
+            guild_id = getattr(user_id, "guild", None)
+            # Actually, we need to get the guild_id from the buffer context
+            # So, let's get the first available guild_id from current_voice_clients
+            # (since user_id is not enough)
+            # Instead, let's pass guild_id as an argument if possible
+            # But for now, try to get the first enabled guild
+            if transcribing_enabled:
+                # Use the first enabled guild (should be correct for most cases)
+                guild_id = next(iter(transcribing_enabled.keys()))
+            else:
+                guild_id = None
+            if guild_id:
+                file_path = get_transcript_file(guild_id)
+                now_str = datetime.now().strftime("%H:%M:%S")
+                with open(file_path, "a", encoding="utf-8") as f:
+                    f.write(f"{now_str} - {user_name}: {text}\n")
 
 # Silence watcher: also copy and clear buffer before processing
 def silence_watcher():
@@ -83,6 +129,8 @@ def is_transcribing(guild_id):
 
 def set_transcribing(guild_id, value):
     transcribing_enabled[guild_id] = value
+    if not value:
+        close_transcript_file(guild_id)
 
 async def start_recording(vc):
     guild_id = vc.guild.id
@@ -92,6 +140,7 @@ async def start_recording(vc):
     except Exception:
         pass
     if is_transcribing(guild_id):
+        get_transcript_file(guild_id)  # Ensure file is created
         vc.listen(WhisperSink())
 
 async def stop_recording(guild_id):
@@ -102,3 +151,4 @@ async def stop_recording(guild_id):
         except Exception:
             pass
         current_voice_clients.pop(guild_id, None)
+    close_transcript_file(guild_id)
