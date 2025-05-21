@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import concurrent.futures
 from discord.ext import voice_recv
 from faster_whisper import WhisperModel
 import numpy as np
@@ -8,9 +9,13 @@ import time
 import os
 from datetime import datetime
 import components.bingo_handler as bingo_handler
+import torch
+
+print("cuda available:", torch.cuda.is_available())
+print("cuDNN available:", torch.backends.cudnn.is_available())
 
 # Load faster-whisper model once
-whisper_model = WhisperModel("medium", device="cpu", compute_type="float32")
+whisper_model = WhisperModel("medium", device="cuda", compute_type="float32")
 
 user_audio_buffers = {}
 user_last_audio_time = {}
@@ -100,6 +105,15 @@ class WhisperSink(voice_recv.BasicSink):
             with open(file_path, "a", encoding="utf-8") as f:
                 f.write(f"{now_str} - {user_name}: {text}\n")
 
+# Create a dictionary to hold per-user executors
+user_executors = {}
+
+def get_user_executor(user_id):
+    # Each user gets their own single-thread executor
+    if user_id not in user_executors:
+        user_executors[user_id] = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    return user_executors[user_id]
+
 # Silence watcher: also copy and clear buffer before processing
 def silence_watcher():
     while True:
@@ -111,7 +125,9 @@ def silence_watcher():
                 buffer_copy = user_audio_buffers[key]
                 user_audio_buffers[key] = b""
                 user_name = user_names.get(key, "unknown")
-                WhisperSink().process_buffer(guild_id, user_id, user_name, buffer_copy)
+                # Submit to a per-user executor so each user's audio is processed in its own thread
+                executor = get_user_executor(user_id)
+                executor.submit(WhisperSink().process_buffer, guild_id, user_id, user_name, buffer_copy)
         time.sleep(0.2)
 
 threading.Thread(target=silence_watcher, daemon=True).start()
