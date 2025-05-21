@@ -6,18 +6,24 @@ from scipy.signal import resample
 import time
 
 # Load faster-whisper model once
-whisper_model = WhisperModel("medium", device="cpu")
+whisper_model = WhisperModel("medium", device="cpu", compute_type="float32")
 
 user_audio_buffers = {}
 user_last_audio_time = {}
 user_names = {}
-SILENCE_TIMEOUT = 1.0  #seconds
+SILENCE_TIMEOUT = 0.5  #seconds
+
+transcribing_enabled = {}  # guild_id: bool
+current_voice_clients = {}  # guild_id: voice_client
 
 class WhisperSink(voice_recv.BasicSink):
     def __init__(self):
         super().__init__(self.callback)
 
     def callback(self, user, data: voice_recv.VoiceData):
+        guild_id = user.guild.id if hasattr(user, "guild") else None
+        if guild_id and not is_transcribing(guild_id):
+            return
         if user is None:
             return
         user_id = user.id
@@ -72,7 +78,27 @@ def silence_watcher():
 
 threading.Thread(target=silence_watcher, daemon=True).start()
 
+def is_transcribing(guild_id):
+    return transcribing_enabled.get(guild_id, False)
+
+def set_transcribing(guild_id, value):
+    transcribing_enabled[guild_id] = value
+
 async def start_recording(vc):
-    if not isinstance(vc, voice_recv.VoiceRecvClient):
-        return
-    vc.listen(WhisperSink())
+    guild_id = vc.guild.id
+    current_voice_clients[guild_id] = vc
+    try:
+        vc.stop_listening()
+    except Exception:
+        pass
+    if is_transcribing(guild_id):
+        vc.listen(WhisperSink())
+
+async def stop_recording(guild_id):
+    vc = current_voice_clients.get(guild_id)
+    if vc:
+        try:
+            vc.stop_listening()
+        except Exception:
+            pass
+        current_voice_clients.pop(guild_id, None)

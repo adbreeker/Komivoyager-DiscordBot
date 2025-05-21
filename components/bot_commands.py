@@ -1,5 +1,7 @@
 import discord
 from discord import app_commands
+import components.voice_transcriber as voice_transcriber
+from discord.ext import voice_recv
 
 def setup_commands(bot):
     @bot.tree.command(name="kv_hello", description="Greets you back dupa!")
@@ -27,11 +29,47 @@ def setup_commands(bot):
             voice_client = interaction.guild.voice_client
 
             if voice_client is None:
-                await channel.connect()
+                vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
+                if voice_transcriber.is_transcribing(interaction.guild.id):
+                    await voice_transcriber.start_recording(vc)
                 await interaction.response.send_message(f"Joined {channel.name}!", ephemeral=True)
             else:
                 await voice_client.disconnect()
-                await channel.connect()
+                vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
+                if voice_transcriber.is_transcribing(interaction.guild.id):
+                    await voice_transcriber.start_recording(vc)
                 await interaction.response.send_message(f"Moved to {channel.name}!", ephemeral=True)
         else:
             await interaction.response.send_message("You are not connected to a voice channel.", ephemeral=True)
+
+    @bot.tree.command(name="kv_transcript", description="Enable or disable voice transcription.")
+    @app_commands.describe(action="on,off or status")
+    async def transcript(interaction: discord.Interaction, action: str):
+        if action.lower() == "status":
+            guild_id = interaction.guild.id
+            if voice_transcriber.is_transcribing(guild_id):
+                await interaction.response.send_message("Transcription is currently enabled.", ephemeral=True)
+            else:
+                await interaction.response.send_message("Transcription is currently disabled.", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("You must be in a voice channel.", ephemeral=True)
+            return
+
+        voice_client = interaction.guild.voice_client
+        if not isinstance(voice_client, voice_recv.VoiceRecvClient):
+            await interaction.response.send_message("Bot is not connected with voice receive enabled. Use /kv_join.", ephemeral=True)
+            return
+
+        if action.lower() == "on":
+            voice_transcriber.set_transcribing(guild_id, True)
+            await voice_transcriber.start_recording(voice_client)
+            await interaction.response.send_message("Transcription enabled.", ephemeral=True)
+        elif action.lower() == "off":
+            voice_transcriber.set_transcribing(guild_id, False)
+            await voice_transcriber.stop_recording(guild_id)
+            await interaction.response.send_message("Transcription disabled.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Usage: /kv_transcript on or /kv_transcript off", ephemeral=True)
