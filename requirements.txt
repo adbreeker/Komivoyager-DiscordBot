@@ -1,2 +1,5 @@
 discord.py
 python-dotenv
+pynacl
+faster-whisper
+discord-ext-voice-recv
