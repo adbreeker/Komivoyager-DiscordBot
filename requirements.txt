@@ -2,4 +2,4 @@ discord.py
 python-dotenv
 pynacl
 faster-whisper
-discord-ext-voice-recv
+discord-ext-voice-recv #or latest version git+https://github.com/imayhaveborkedit/discord-ext-voice-recv if you encounter issues

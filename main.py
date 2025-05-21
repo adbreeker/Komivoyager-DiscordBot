@@ -7,6 +7,7 @@ import os
 # Import the component modules
 from components.bot_commands import setup_commands
 from components.bot_events import setup_events
+from components import bingo_handler
 
 
 load_dotenv()
@@ -18,6 +19,8 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="@@", intents=intents)
+
+bingo_handler.set_bot(bot)
 
 @bot.event
 async def on_ready():

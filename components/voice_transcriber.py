@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from discord.ext import voice_recv
 from faster_whisper import WhisperModel
@@ -6,6 +7,7 @@ from scipy.signal import resample
 import time
 import os
 from datetime import datetime
+import components.bingo_handler as bingo_handler
 
 # Load faster-whisper model once
 whisper_model = WhisperModel("medium", device="cpu", compute_type="float32")
@@ -58,14 +60,16 @@ class WhisperSink(voice_recv.BasicSink):
         user_name = user.name
         pcm = data.pcm
         now = time.time()
-        if user_id not in user_audio_buffers:
-            user_audio_buffers[user_id] = b""
-            user_last_audio_time[user_id] = now
-        user_audio_buffers[user_id] += pcm
-        user_last_audio_time[user_id] = now
-        user_names[user_id] = user_name
+        # Use (user_id, guild_id) as the key
+        key = (user_id, guild_id)
+        if key not in user_audio_buffers:
+            user_audio_buffers[key] = b""
+            user_last_audio_time[key] = now
+        user_audio_buffers[key] += pcm
+        user_last_audio_time[key] = now
+        user_names[key] = user_name
 
-    def process_buffer(self, user_id, user_name, buffer_data):
+    def process_buffer(self, guild_id, user_id, user_name, buffer_data):
         raw = buffer_data
         audio_data = np.frombuffer(raw, np.int16)
         if audio_data.ndim == 1 and len(audio_data) % 2 == 0:
@@ -89,37 +93,24 @@ class WhisperSink(voice_recv.BasicSink):
             without_timestamps=True
         )
         text = "".join([s.text for s in segments]).strip()
-        if text:
-            # Write to transcript file
-            # Try to get guild_id from user object (VoiceUser)
-            guild_id = getattr(user_id, "guild", None)
-            # Actually, we need to get the guild_id from the buffer context
-            # So, let's get the first available guild_id from current_voice_clients
-            # (since user_id is not enough)
-            # Instead, let's pass guild_id as an argument if possible
-            # But for now, try to get the first enabled guild
-            if transcribing_enabled:
-                # Use the first enabled guild (should be correct for most cases)
-                guild_id = next(iter(transcribing_enabled.keys()))
-            else:
-                guild_id = None
-            if guild_id:
-                file_path = get_transcript_file(guild_id)
-                now_str = datetime.now().strftime("%H:%M:%S")
-                with open(file_path, "a", encoding="utf-8") as f:
-                    f.write(f"{now_str} - {user_name}: {text}\n")
+        if text and guild_id:
+            file_path = get_transcript_file(guild_id)
+            now_str = datetime.now().strftime("%H:%M:%S")
+            with open(file_path, "a", encoding="utf-8") as f:
+                f.write(f"{now_str} - {user_name}: {text}\n")
 
 # Silence watcher: also copy and clear buffer before processing
 def silence_watcher():
     while True:
         now = time.time()
-        for user_id in list(user_audio_buffers.keys()):
-            last = user_last_audio_time.get(user_id, now)
-            if len(user_audio_buffers[user_id]) > 0 and now - last > SILENCE_TIMEOUT:
-                buffer_copy = user_audio_buffers[user_id]
-                user_audio_buffers[user_id] = b""
-                user_name = user_names.get(user_id, "unknown")
-                WhisperSink().process_buffer(user_id, user_name, buffer_copy)
+        for key in list(user_audio_buffers.keys()):
+            user_id, guild_id = key
+            last = user_last_audio_time.get(key, now)
+            if len(user_audio_buffers[key]) > 0 and now - last > SILENCE_TIMEOUT:
+                buffer_copy = user_audio_buffers[key]
+                user_audio_buffers[key] = b""
+                user_name = user_names.get(key, "unknown")
+                WhisperSink().process_buffer(guild_id, user_id, user_name, buffer_copy)
         time.sleep(0.2)
 
 threading.Thread(target=silence_watcher, daemon=True).start()
