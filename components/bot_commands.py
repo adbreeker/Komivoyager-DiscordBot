@@ -86,8 +86,5 @@ def setup_commands(bot):
             await interaction.response.send_message("Volume must be between 0.0 and 2.0", ephemeral=True)
             return
         voice_client = interaction.guild.voice_client
-        if voice_client is None:
-            await interaction.response.send_message("Bot is not in a voice channel.", ephemeral=True)
-            return
-        set_background_volume(interaction.guild.id, volume, voice_client)
+        await set_background_volume(interaction.guild.id, volume, voice_client)
         await interaction.response.send_message(f"Background music volume set to {volume}", ephemeral=True)

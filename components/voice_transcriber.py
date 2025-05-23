@@ -4,17 +4,18 @@ import concurrent.futures
 from discord.ext import voice_recv
 from faster_whisper import WhisperModel
 import numpy as np
-from scipy.signal import resample
+from scipy.signal import resample, butter, filtfilt, wiener
 import time
 import os
 from datetime import datetime
 import torch
 
+
 print("cuda available:", torch.cuda.is_available())
 print("cuDNN available:", torch.backends.cudnn.is_available())
 
 # Load faster-whisper model once
-whisper_model = WhisperModel("medium", device="cuda", compute_type="float32")
+whisper_model = WhisperModel("turbo", device="cuda", compute_type="float32")
 
 user_audio_buffers = {}
 user_last_audio_time = {}
@@ -81,6 +82,12 @@ class WhisperSink(voice_recv.BasicSink):
                 audio_data = audio_data.reshape(-1, 2)
                 audio_data = audio_data.mean(axis=1)
             audio_data = audio_data.astype(np.float32) / 32768.0
+            
+            # --- ADD RMS THRESHOLD CHECK ---
+            rms = np.sqrt(np.mean(audio_data ** 2))
+            if rms < 0.004:  # Skip very quiet audio (adjust as needed)
+                return
+            
             gain = 15.0
             audio_data = np.clip(audio_data * gain, -1.0, 1.0)
             orig_sr = 48000
@@ -89,13 +96,52 @@ class WhisperSink(voice_recv.BasicSink):
                 num_samples = int(len(audio_data) * target_sr / orig_sr)
                 audio_data = resample(audio_data, num_samples)
 
+            # Add noise reduction and normalization
+            def enhance_audio(audio_data):
+                # Normalize to prevent clipping
+                max_val = np.max(np.abs(audio_data))
+                if max_val > 0:
+                    audio_data = audio_data / max_val * 0.95
+
+                # High-pass filter (remove low-frequency noise)
+                b, a = butter(4, 100, btype='high', fs=16000)  # Slightly higher cutoff
+                audio_data = filtfilt(b, a, audio_data)
+                
+                # Low-pass filter (remove high-frequency noise)
+                b, a = butter(4, 7000, btype='low', fs=16000)
+                audio_data = filtfilt(b, a, audio_data)
+                
+                # Apply Wiener filter for noise reduction (optional)
+                try:
+                    audio_data = wiener(audio_data, noise=0.01)
+                except:
+                    pass  # Skip if wiener filter fails
+                
+                return audio_data.astype(np.float32)
+
+            # Use it before transcription:
+            audio_data = enhance_audio(audio_data)
+
             segments, _ = whisper_model.transcribe(
                 audio_data,
                 language="pl",
-                temperature=0.2,
-                beam_size=10,
-                condition_on_previous_text=False,
-                without_timestamps=True
+                task="transcribe",
+                temperature=0.3,  # Lower temperature = more conservative
+                beam_size=25,      # Reduce beam size for faster, more focused results
+                best_of=25,                
+                patience=2.0,     # Lower patience
+                condition_on_previous_text=False, 
+                without_timestamps=True,
+                no_repeat_ngram_size=4,
+                log_prob_threshold=-1.5,     # Higher threshold = stricter filtering
+                compression_ratio_threshold=2.0,  # Lower = stricter
+                no_speech_threshold=0.4,     # Lower = more likely to detect speech
+                vad_filter=True,
+                vad_parameters={
+                    "threshold": 0.6, 
+                    "min_speech_duration_ms": 250,  # Minimum speech duration
+                    "min_silence_duration_ms": 100 
+                }, 
             )
             text = "".join([s.text for s in segments]).strip()
             if text and guild_id:

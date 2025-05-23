@@ -23,7 +23,7 @@ async def play_background(voice_client):
                 play_next(None)
             else:
                 print(f"Playing background music in {voice_client.channel.name}")
-                volume = background_volumes.get(guild_id, 0.1)
+                volume = background_volumes.get(guild_id, 0.0)
                 source = discord.FFmpegPCMAudio(
                     mp3_path,
                     executable=ffmpeg_path,
@@ -41,13 +41,12 @@ async def play_background(voice_client):
 
     await play_next(None)
 
-def set_background_volume(guild_id, volume, voice_client):
+async def set_background_volume(guild_id, volume, voice_client):
     background_volumes[guild_id] = volume
-    if voice_client.is_playing():
-        stop_voice(voice_client)
+    if voice_client and voice_client.is_playing():
+        await stop_voice(voice_client)
 
 def stop_voice(voice_client):
     voice_client.stop()
     if vt.is_transcribing(voice_client.guild.id):
         voice_client.listen(vt.WhisperSink())
-    
