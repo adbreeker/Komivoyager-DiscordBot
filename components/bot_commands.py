@@ -5,7 +5,7 @@ from discord.ext import voice_recv
 from components.voice_utils import set_background_volume
 
 def setup_commands(bot):
-    @bot.tree.command(name="kv_hello", description="Greets you back dupa!")
+    @bot.tree.command(name="kv_hello", description="Greets you back!")
     async def hello(interaction: discord.Interaction):
         await interaction.response.send_message(f"Hello {interaction.user.mention}!")
 
@@ -86,5 +86,5 @@ def setup_commands(bot):
             await interaction.response.send_message("Volume must be between 0.0 and 2.0", ephemeral=True)
             return
         voice_client = interaction.guild.voice_client
-        await set_background_volume(interaction.guild.id, volume, voice_client)
+        set_background_volume(interaction.guild.id, volume, voice_client)
         await interaction.response.send_message(f"Background music volume set to {volume}", ephemeral=True)

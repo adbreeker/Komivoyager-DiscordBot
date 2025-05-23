@@ -24,13 +24,14 @@ bot = commands.Bot(command_prefix="@@", intents=intents)
 async def on_ready():
     print(f'Logged in as {bot.user.name} - {bot.user.id}')
     print('------')
-    activity = discord.Game("Ready to solve your np-hard problems | @@help")
+    activity = discord.Game("Ready to solve your np-hard problems | /help")
     await bot.change_presence(status=discord.Status.online, activity=activity)
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands.")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+    print("------\nLogs:\n")
 
 # Set up commands and events
 setup_commands(bot)
