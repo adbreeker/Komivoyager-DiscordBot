@@ -2,8 +2,8 @@ import discord
 from discord import app_commands
 import components.voice_transcriber as voice_transcriber
 from discord.ext import voice_recv
-from components.voice_utils import set_background_volume
 import components.youtube_player as yt_player
+import components.audio_manager as audio_mgr
 
 def setup_commands(bot):
 #help command ----------------------------------------------------------------------------------------------------- help command
@@ -53,7 +53,8 @@ def setup_commands(bot):
         embed.add_field(
             name="🎵 Music Commands",
             value=(
-                "`/kv_play <query>` - Play YouTube music (URL or search)\n"
+                "`/kv_play <query>` - Play song instantly (stops current music)\n"
+                "`/kv_enqueue <query>` - Add song to queue\n"
                 "`/kv_skip` - Skip current song\n"
                 "`/kv_stop` - Stop music and clear queue\n"
                 "`/kv_queue` - Show current queue\n"
@@ -151,8 +152,7 @@ def setup_commands(bot):
     @app_commands.describe(action="on,off or status")
     async def transcript(interaction: discord.Interaction, action: str):
         guild_id = interaction.guild.id
-        if action.lower() == "status":
-            
+        if action.lower() == "status":            
             if voice_transcriber.is_transcribing(guild_id):
                 await interaction.response.send_message("Transcription is currently enabled.", ephemeral=True, delete_after=5)
             else:
@@ -192,13 +192,42 @@ def setup_commands(bot):
         scaled_volume = (volume / 100) * 2.0
         
         voice_client = interaction.guild.voice_client
-        set_background_volume(interaction.guild.id, scaled_volume, voice_client)
+        audio_mgr.set_background_volume(interaction.guild.id, scaled_volume)
         await interaction.response.send_message(f"Background music volume set to {volume}%", ephemeral=True, delete_after=5)
 
-#play command ----------------------------------------------------------------------------------------------------- play command
-    @bot.tree.command(name="kv_play", description="Play a song from YouTube")
+#play command (instant play) ----------------------------------------------------------------------------------------------------- play command
+    @bot.tree.command(name="kv_play", description="Play a song instantly (stops current music)")
     @app_commands.describe(query="YouTube URL or search query")
     async def play(interaction: discord.Interaction, query: str):
+        if not interaction.user.voice:
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
+            return
+        
+        voice_client = interaction.guild.voice_client
+        if not voice_client:
+            voice_client = await interaction.user.voice.channel.connect()
+        
+        await interaction.response.defer()
+        
+        # Play instantly
+        title, uploader = await yt_player.play_instantly(voice_client, interaction.guild.id, query)
+        if not title:
+            await interaction.followup.send("❌ Failed to load the song! Please check the URL or search term.")
+            return
+        
+        embed = discord.Embed(
+            title="🎵 Now Playing",
+            description=f"**{title}**",
+            color=0x00ff00
+        )
+        if uploader:
+            embed.add_field(name="Uploader", value=uploader, inline=True)
+        await interaction.followup.send(embed=embed)
+
+#enqueue command (add to queue) ----------------------------------------------------------------------------------------------------- enqueue command
+    @bot.tree.command(name="kv_enqueue", description="Add a song to the queue")
+    @app_commands.describe(query="YouTube URL or search query")
+    async def enqueue(interaction: discord.Interaction, query: str):
         if not interaction.user.voice:
             await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
@@ -215,9 +244,9 @@ def setup_commands(bot):
             await interaction.followup.send("❌ Failed to load the song! Please check the URL or search term.")
             return
         
-        # If nothing is playing, start playing
-        if not voice_client.is_playing():
-            playing_title, playing_uploader = await yt_player.play_next(voice_client, interaction.guild.id)
+        # If nothing is playing, start playing from queue
+        if not audio_mgr.is_playing_youtube(interaction.guild.id):
+            playing_title, playing_uploader = await yt_player.play_next_from_queue(voice_client, interaction.guild.id)
             embed = discord.Embed(
                 title="🎵 Now Playing",
                 description=f"**{playing_title}**",
@@ -227,7 +256,7 @@ def setup_commands(bot):
                 embed.add_field(name="Uploader", value=playing_uploader, inline=True)
             await interaction.followup.send(embed=embed)
         else:
-            queue_pos = len(yt_player.get_queue(interaction.guild.id)) + 1
+            queue_pos = len(yt_player.get_queue(interaction.guild.id))
             embed = discord.Embed(
                 title="📋 Added to Queue",
                 description=f"**{title}**",

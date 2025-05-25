@@ -2,7 +2,7 @@ import discord
 import asyncio
 from discord.ext import voice_recv
 import components.voice_transcriber as voice_transcriber
-from components.voice_utils import play_background
+from components.audio_manager import play_background
 
 def setup_events(bot):
     @bot.event

@@ -80,7 +80,7 @@ class WhisperSink(voice_recv.BasicSink):
             
             # --- ADD RMS THRESHOLD CHECK ---
             rms = np.sqrt(np.mean(audio_data ** 2))
-            if rms < 0.004:  # Skip very quiet audio (adjust as needed)
+            if rms < 0.003:  # Skip very quiet audio (adjust as needed)
                 return
             
             gain = 15.0
