@@ -8,11 +8,6 @@ from scipy.signal import resample, butter, filtfilt, wiener
 import time
 import os
 from datetime import datetime
-import torch
-
-
-print("cuda available:", torch.cuda.is_available())
-print("cuDNN available:", torch.backends.cudnn.is_available())
 
 # Load faster-whisper model once
 whisper_model = WhisperModel("turbo", device="cuda", compute_type="float32")

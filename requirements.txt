@@ -9,3 +9,4 @@ https://download.pytorch.org/whl/cu124/torch-2.5.0%2Bcu124-cp311-cp311-win_amd64
 https://download.pytorch.org/whl/cu124/torchaudio-2.5.0%2Bcu124-cp311-cp311-win_amd64.whl#sha256=9a51aea447519fd6282a80308f15cc6c31138ac92822925a5364f0fd6e4f28f9
 imageio-ffmpeg
 mutagen
+yt-dlp
