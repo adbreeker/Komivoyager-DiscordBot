@@ -72,14 +72,14 @@ async def play_instantly(voice_client, guild_id, url):
             source.volume = audio_mgr.music_volumes[guild_id]
         
         audio_mgr.current_youtube_players[guild_id] = source
-        
+        loop = asyncio.get_running_loop()
+
         def after_playing(error):
             if error:
                 print(f'Player error: {error}')
             audio_mgr.current_youtube_players.pop(guild_id, None)
             # Play next song from queue if available
-            coro = play_next_from_queue(voice_client, guild_id)
-            fut = asyncio.run_coroutine_threadsafe(coro, asyncio.get_event_loop())
+            fut = asyncio.run_coroutine_threadsafe(play_next_from_queue(voice_client, guild_id), loop)
             try:
                 fut.result()
             except:
@@ -95,20 +95,22 @@ async def play_next_from_queue(voice_client, guild_id):
     """Play the next song from queue"""
     if guild_id in audio_mgr.music_queues and audio_mgr.music_queues[guild_id]:
         source, title, uploader = audio_mgr.music_queues[guild_id].pop(0)
+
+        audio_mgr.stop_audio(voice_client)
         
         # Set volume if specified
         if guild_id in audio_mgr.music_volumes:
             source.volume = audio_mgr.music_volumes[guild_id]
         
         audio_mgr.current_youtube_players[guild_id] = source
+        loop = asyncio.get_running_loop()
         
         def after_playing(error):
             if error:
                 print(f'Player error: {error}')
             audio_mgr.current_youtube_players.pop(guild_id, None)
-            # Play next song
-            coro = play_next_from_queue(voice_client, guild_id)
-            fut = asyncio.run_coroutine_threadsafe(coro, asyncio.get_event_loop())
+            # Play next song from queue if available
+            fut = asyncio.run_coroutine_threadsafe(play_next_from_queue(voice_client, guild_id), loop)
             try:
                 fut.result()
             except:
