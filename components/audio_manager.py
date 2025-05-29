@@ -32,6 +32,8 @@ def get_current_audio_type(guild_id):
         return "youtube"
     elif is_playing_background(guild_id):
         return "background"
+    elif is_playing_voice(guild_id):
+        return "voice"
     else:
         return None
     

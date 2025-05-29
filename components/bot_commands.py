@@ -4,6 +4,7 @@ import components.voice_transcriber as voice_transcriber
 from discord.ext import voice_recv
 import components.youtube_player as yt_player
 import components.audio_manager as audio_mgr
+import components.utilis as utils
 
 def setup_commands(bot):
 #help command ----------------------------------------------------------------------------------------------------- help command
@@ -122,17 +123,11 @@ def setup_commands(bot):
             guild_id = interaction.guild.id
 
             if voice_client is None:
-                if voice_transcriber.is_transcribing(guild_id):
-                    vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
-                else:
-                    vc = await channel.connect()
+                voice_client = await utils.connect_to_channel(channel, guild_id)
                 await interaction.response.send_message(f"Joined {channel.name}!", ephemeral=True, delete_after=5)
             else:
                 await voice_client.disconnect()
-                if voice_transcriber.is_transcribing(guild_id):
-                    vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
-                else:
-                    vc = await channel.connect()
+                voice_client = await utils.connect_to_channel(channel, guild_id)
                 await interaction.response.send_message(f"Moved to {channel.name}!", ephemeral=True, delete_after=5)
         else:
             await interaction.response.send_message("You are not connected to a voice channel.", ephemeral=True, delete_after=5)
@@ -205,7 +200,7 @@ def setup_commands(bot):
         
         voice_client = interaction.guild.voice_client
         if not voice_client:
-            voice_client = await interaction.user.voice.channel.connect()
+            voice_client = await utils.connect_to_channel(interaction.user.voice.channel, interaction.guild.id)
         
         await interaction.response.defer()
         
@@ -232,10 +227,6 @@ def setup_commands(bot):
             await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
         
-        voice_client = interaction.guild.voice_client
-        if not voice_client:
-            voice_client = await interaction.user.voice.channel.connect()
-        
         await interaction.response.defer()
         
         # Add to queue
@@ -244,35 +235,36 @@ def setup_commands(bot):
             await interaction.followup.send("❌ Failed to load the song! Please check the URL or search term.")
             return
         
-        # If nothing is playing, start playing from queue
-        if not audio_mgr.is_playing_youtube(interaction.guild.id):
-            playing_title, playing_uploader = await yt_player.play_next_from_queue(voice_client, interaction.guild.id)
-            embed = discord.Embed(
-                title="🎵 Now Playing",
-                description=f"**{playing_title}**",
-                color=0x00ff00
-            )
-            if playing_uploader:
-                embed.add_field(name="Uploader", value=playing_uploader, inline=True)
-            await interaction.followup.send(embed=embed)
-        else:
-            queue_pos = len(yt_player.get_queue(interaction.guild.id))
-            embed = discord.Embed(
-                title="📋 Added to Queue",
-                description=f"**{title}**",
-                color=0x00ff00
-            )
-            if uploader:
-                embed.add_field(name="Uploader", value=uploader, inline=True)
-            embed.add_field(name="Position", value=f"#{queue_pos}", inline=True)
-            await interaction.followup.send(embed=embed)
+        queue_pos = len(yt_player.get_queue(interaction.guild.id))
+        embed = discord.Embed(
+            title="📋 Added to Queue",
+            description=f"**{title}**",
+            color=0x00ff00
+        )
+        if uploader:
+            embed.add_field(name="Uploader", value=uploader, inline=True)
+        embed.add_field(name="Position", value=f"#{queue_pos}", inline=True)
+        await interaction.followup.send(embed=embed)
+        
+        voice_client = interaction.guild.voice_client
+        if voice_client:
+            title, uploader = await yt_player.play_next(voice_client, interaction.guild.id)
+            if title:
+                embed = discord.Embed(
+                    title="🎵 Now Playing",
+                    description=f"**{title}**",
+                    color=0x00ff00
+                )
+                if uploader:
+                    embed.add_field(name="Uploader", value=uploader, inline=True)
+                await interaction.followup.send(embed=embed)
 
 #skip command ----------------------------------------------------------------------------------------------------- skip command
     @bot.tree.command(name="kv_skip", description="Skip the current song")
     async def skip(interaction: discord.Interaction):
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_playing():
-            voice_client.stop()
+            audio_mgr.stop_audio(voice_client)
             await interaction.response.send_message("⏭️ Skipped current song!")
         else:
             await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
@@ -283,16 +275,17 @@ def setup_commands(bot):
         voice_client = interaction.guild.voice_client
         if voice_client:
             yt_player.stop_music(interaction.guild.id)
-            voice_client.stop()
+            audio_mgr.stop_audio(voice_client)
             await interaction.response.send_message("⏹️ Stopped music and cleared queue!")
         else:
+            yt_player.stop_music(interaction.guild.id)
             await interaction.response.send_message("❌ Not connected to voice!", ephemeral=True)
 
 #queue command ----------------------------------------------------------------------------------------------------- queue command
     @bot.tree.command(name="kv_queue", description="Show the current music queue")
     async def queue(interaction: discord.Interaction):
         guild_id = interaction.guild.id
-        current_title, current_uploader = yt_player.get_current_song(guild_id)
+        current_title, current_uploader = yt_player.get_current_song_info(guild_id)
         queue_list = yt_player.get_queue(guild_id)
         
         embed = discord.Embed(title="🎵 Music Queue", color=0x00ff00)
@@ -305,10 +298,10 @@ def setup_commands(bot):
         
         if queue_list:
             queue_text = ""
-            for i, (_, title, uploader) in enumerate(queue_list[:10]):
-                queue_text += f"{i+1}. **{title}**"
-                if uploader:
-                    queue_text += f" - {uploader}"
+            for i, source in enumerate(queue_list[:10]):
+                queue_text += f"{i+1}. **{source.title}**"
+                if source.uploader:
+                    queue_text += f" - {source.uploader}"
                 queue_text += "\n"
             
             if len(queue_list) > 10:
@@ -342,7 +335,7 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_nowplaying", description="Show what's currently playing")
     async def nowplaying(interaction: discord.Interaction):
         guild_id = interaction.guild.id
-        current_title, current_uploader = yt_player.get_current_song(guild_id)
+        current_title, current_uploader = yt_player.get_current_song_info(guild_id)
         
         if current_title:
             embed = discord.Embed(

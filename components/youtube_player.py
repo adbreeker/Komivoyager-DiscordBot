@@ -58,75 +58,62 @@ class YTDLSource(PCMVolumeTransformer):
         )
         
         return cls(source, data=data)
+    
+async def play(voice_client, guild_id, source):
+    """Play a song in the voice channel"""
+    try:            
+            # Set volume if specified
+        if guild_id in audio_mgr.music_volumes:
+            source.volume = audio_mgr.music_volumes[guild_id]
+            
+        audio_mgr.current_youtube_players[guild_id] = source
+        loop = asyncio.get_running_loop()
+
+        def after_playing(error):
+            if error:
+                print(f'Player error: {error}')
+            audio_mgr.current_youtube_players.pop(guild_id, None)
+            fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
+            
+        # Stop whatever is playing
+        audio_mgr.stop_audio(voice_client)
+        voice_client.play(source, after=after_playing)
+    except Exception as e:
+        print(f"Error playing song: {e}")
 
 async def play_instantly(voice_client, guild_id, url):
     """Play a song instantly (stops current music)"""
     try:        
         source = await YTDLSource.from_url(url, stream=True)
-
-        # Stop whatever is playing
-        audio_mgr.stop_audio(voice_client)
-        
-        # Set volume if specified
-        if guild_id in audio_mgr.music_volumes:
-            source.volume = audio_mgr.music_volumes[guild_id]
-        
-        audio_mgr.current_youtube_players[guild_id] = source
-        loop = asyncio.get_running_loop()
-
-        def after_playing(error):
-            if error:
-                print(f'Player error: {error}')
-            audio_mgr.current_youtube_players.pop(guild_id, None)
-            # Play next song from queue if available
-            fut = asyncio.run_coroutine_threadsafe(play_next_from_queue(voice_client, guild_id), loop)
-            try:
-                fut.result()
-            except:
-                pass
-        
-        voice_client.play(source, after=after_playing)
+        await play(voice_client, guild_id, source)
         return source.title, source.uploader
     except Exception as e:
         print(f"Error playing instantly: {e}")
         return None, None
-
-async def play_next_from_queue(voice_client, guild_id):
-    """Play the next song from queue"""
-    if guild_id in audio_mgr.music_queues and audio_mgr.music_queues[guild_id]:
-        source, title, uploader = audio_mgr.music_queues[guild_id].pop(0)
-
-        audio_mgr.stop_audio(voice_client)
-        
-        # Set volume if specified
-        if guild_id in audio_mgr.music_volumes:
-            source.volume = audio_mgr.music_volumes[guild_id]
-        
-        audio_mgr.current_youtube_players[guild_id] = source
-        loop = asyncio.get_running_loop()
-        
-        def after_playing(error):
-            if error:
-                print(f'Player error: {error}')
-            audio_mgr.current_youtube_players.pop(guild_id, None)
-            # Play next song from queue if available
-            fut = asyncio.run_coroutine_threadsafe(play_next_from_queue(voice_client, guild_id), loop)
-            try:
-                fut.result()
-            except:
-                pass
-        
-        voice_client.play(source, after=after_playing)
-        return title, uploader
     
-
+async def play_next(voice_client, guild_id):
+    """Play the next song in the queue"""
+    try:
+        await asyncio.sleep(0.1)  # Allow time for cleanup
+        if guild_id in audio_mgr.music_queues and audio_mgr.music_queues[guild_id]:
+            if audio_mgr.get_current_audio_type(guild_id) in ['background', None]:
+                source = audio_mgr.music_queues[guild_id].pop(0)
+                await play(voice_client, guild_id, source)
+                return source.title, source.uploader
+            elif audio_mgr.get_current_audio_type(guild_id) != 'youtube':
+                loop = asyncio.get_running_loop()
+                fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
+    except Exception as e:
+        print(f"Error playing next song: {e}")
+    return None, None
+    
 async def add_to_queue(guild_id, url):
     """Add a song to the queue (enqueue)"""
     try:
         source = await YTDLSource.from_url(url, stream=True)
         if guild_id not in audio_mgr.music_queues:
             audio_mgr.music_queues[guild_id] = []
-        audio_mgr.music_queues[guild_id].append((source, source.title, source.uploader))
+        audio_mgr.music_queues[guild_id].append(source)
         return source.title, source.uploader
     except Exception as e:
         print(f"Error adding to queue: {e}")
@@ -141,7 +128,7 @@ def clear_queue(guild_id):
     if guild_id in audio_mgr.music_queues:
         audio_mgr.music_queues[guild_id] = []
 
-def get_current_song(guild_id):
+def get_current_song_info(guild_id):
     """Get currently playing song"""
     source = audio_mgr.current_youtube_players.get(guild_id)
     if source:
