@@ -1,6 +1,5 @@
 import discord
 import asyncio
-from discord.ext import voice_recv
 import components.voice_transcriber as voice_transcriber
 from components.audio_manager import play_background
 
@@ -41,15 +40,6 @@ def setup_events(bot):
                 await voice_transcriber.stop_recording(guild_id)
 
         # user state changes
-        if not member.bot:
-            if after.channel is not None and not voice_client:
-                await asyncio.sleep(0.5)
-                if len(after.channel.members) >= 0 and not voice_client:
-                    if voice_transcriber.is_transcribing(guild_id):
-                        vc = await after.channel.connect(cls=voice_recv.VoiceRecvClient)
-                    else:
-                        vc = await after.channel.connect()
-
             if voice_client and voice_client.channel is not None:
                 non_bot_members = [m for m in voice_client.channel.members if not m.bot]
                 if len(non_bot_members) == 0:

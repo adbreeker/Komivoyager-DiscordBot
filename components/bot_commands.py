@@ -27,6 +27,15 @@ def setup_commands(bot):
             ),
             inline=False
         )
+
+        # Admin Commands
+        embed.add_field(
+            name="🛡️ Admin Commands",
+            value=(
+                "`/kv_clearchat <1-100>` - Delete messages from chat (Admin/Owner only)\n"
+            ),
+            inline=False
+        )
         
         # Voice Commands
         embed.add_field(
@@ -54,13 +63,15 @@ def setup_commands(bot):
         embed.add_field(
             name="🎵 Music Commands",
             value=(
+                "`/kv_play` - Starts playing from queue if queue is not empty\n"
                 "`/kv_play <query>` - Play song instantly (stops current music)\n"
                 "`/kv_enqueue <query>` - Add song to queue\n"
+                "`/kv_clearqueue` - Clear the music queue\n"
+                "`/kv_queue` - Show current queue\n"
+                "`/kv_nowplaying` - Show current song\n"
                 "`/kv_skip` - Skip current song\n"
                 "`/kv_stop` - Stop music and clear queue\n"
-                "`/kv_queue` - Show current queue\n"
                 "`/kv_volume <0-100>` - Set music volume\n"
-                "`/kv_nowplaying` - Show current song\n"
                 "`/kv_background <0-100>` - Set background music volume\n"
             ),
             inline=False
@@ -70,8 +81,7 @@ def setup_commands(bot):
         embed.add_field(
             name="ℹ️ Additional Info",
             value=(
-                "• Bot automatically joins/leaves channels when users join/leave\n"
-                "• Background music loops automatically when playing\n"
+                "• Background music starts and loops automatically\n"
                 "• Transcription supports Polish language\n"
                 "• Bot disconnects when no users are in voice channel"
             ),
@@ -174,41 +184,34 @@ def setup_commands(bot):
             await voice_transcriber.stop_recording(guild_id)
             await interaction.response.send_message("Transcription disabled.", ephemeral=True, delete_after=5)
         else:
-            await interaction.response.send_message("Wrong command!\nUsage: /kv_transcript {on/off/status}", ephemeral=True, delete_after=30)
-
-#background command ----------------------------------------------------------------------------------------------------- background command
-    @bot.tree.command(name="kv_background", description="Set background music volume (0-100)")
-    @app_commands.describe(volume="Volume level (0-100)")
-    async def background(interaction: discord.Interaction, volume: int):
-        if not 0 <= volume <= 100:
-            await interaction.response.send_message("Volume must be between 0-100", ephemeral=True, delete_after=30)
-            return
-        
-        scaled_volume = (volume / 100) * 2.0
-        
-        voice_client = interaction.guild.voice_client
-        audio_mgr.set_background_volume(interaction.guild.id, scaled_volume)
-        await interaction.response.send_message(f"Background music volume set to {volume}%", ephemeral=True, delete_after=5)
+            await interaction.response.send_message("Wrong command!\nUsage: /kv_transcript {on/off/status}", ephemeral=True, delete_after=15)
 
 #play command (instant play) ----------------------------------------------------------------------------------------------------- play command
     @bot.tree.command(name="kv_play", description="Play a song instantly (stops current music)")
-    @app_commands.describe(query="YouTube URL or search query")
-    async def play(interaction: discord.Interaction, query: str):
+    @app_commands.describe(query="YouTube URL or search query (optional - leave empty to play from queue)")
+    async def play(interaction: discord.Interaction, query: str = ""):
         if not interaction.user.voice:
-            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True, delete_after=5)
             return
         
         voice_client = interaction.guild.voice_client
         if not voice_client:
             voice_client = await utils.connect_to_channel(interaction.user.voice.channel, interaction.guild.id)
         
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
+
+        if query is None or query.strip() == "":
+            title, uploader = await yt_player.play_next(voice_client, interaction.guild.id)
+            if not title:
+                await interaction.followup.send(f"❌ There is nothing to play.", ephemeral=True)
+                return
         
-        # Play instantly
-        title, uploader = await yt_player.play_instantly(voice_client, interaction.guild.id, query)
-        if not title:
-            await interaction.followup.send("❌ Failed to load the song! Please check the URL or search term.")
-            return
+        else:
+            # Play instantly
+            title, uploader = await yt_player.play_instantly(voice_client, interaction.guild.id, query)
+            if not title:
+                await interaction.followup.send(f"❌ Failed to load the '{query}'! Please check the URL or search term.")
+                return
         
         embed = discord.Embed(
             title="🎵 Now Playing",
@@ -223,16 +226,13 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_enqueue", description="Add a song to the queue")
     @app_commands.describe(query="YouTube URL or search query")
     async def enqueue(interaction: discord.Interaction, query: str):
-        if not interaction.user.voice:
-            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
-            return
         
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         
         # Add to queue
         title, uploader = await yt_player.add_to_queue(interaction.guild.id, query)
         if not title:
-            await interaction.followup.send("❌ Failed to load the song! Please check the URL or search term.")
+            await interaction.followup.send(f"❌ Failed to load the '{query}'! Please check the URL or search term.")
             return
         
         queue_pos = len(yt_player.get_queue(interaction.guild.id))
@@ -245,41 +245,24 @@ def setup_commands(bot):
             embed.add_field(name="Uploader", value=uploader, inline=True)
         embed.add_field(name="Position", value=f"#{queue_pos}", inline=True)
         await interaction.followup.send(embed=embed)
+
+#clearqueue command ----------------------------------------------------------------------------------------------------- clearqueue command
+    @bot.tree.command(name="kv_clearqueue", description="Clear the music queue")
+    async def clearqueue(interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        queue_list = yt_player.get_queue(guild_id)
         
-        voice_client = interaction.guild.voice_client
-        if voice_client:
-            title, uploader = await yt_player.play_next(voice_client, interaction.guild.id)
-            if title:
-                embed = discord.Embed(
-                    title="🎵 Now Playing",
-                    description=f"**{title}**",
-                    color=0x00ff00
-                )
-                if uploader:
-                    embed.add_field(name="Uploader", value=uploader, inline=True)
-                await interaction.followup.send(embed=embed)
-
-#skip command ----------------------------------------------------------------------------------------------------- skip command
-    @bot.tree.command(name="kv_skip", description="Skip the current song")
-    async def skip(interaction: discord.Interaction):
-        voice_client = interaction.guild.voice_client
-        if voice_client and voice_client.is_playing():
-            audio_mgr.stop_audio(voice_client)
-            await interaction.response.send_message("⏭️ Skipped current song!")
+        if queue_list:
+            queue_length = len(queue_list)
+            yt_player.clear_queue(guild_id)
+            embed = discord.Embed(
+                title="🗑️ Queue Cleared",
+                description=f"Removed **{queue_length}** songs from the queue",
+                color=0xff9900
+            )
+            await interaction.response.send_message(embed=embed, delete_after=5)
         else:
-            await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
-
-#stop command ----------------------------------------------------------------------------------------------------- stop command
-    @bot.tree.command(name="kv_stop", description="Stop music and clear queue")
-    async def stop_music(interaction: discord.Interaction):
-        voice_client = interaction.guild.voice_client
-        if voice_client:
-            yt_player.stop_music(interaction.guild.id)
-            audio_mgr.stop_audio(voice_client)
-            await interaction.response.send_message("⏹️ Stopped music and cleared queue!")
-        else:
-            yt_player.stop_music(interaction.guild.id)
-            await interaction.response.send_message("❌ Not connected to voice!", ephemeral=True)
+            await interaction.response.send_message("❌ Queue is already empty!", ephemeral=True, delete_after=5)
 
 #queue command ----------------------------------------------------------------------------------------------------- queue command
     @bot.tree.command(name="kv_queue", description="Show the current music queue")
@@ -314,22 +297,7 @@ def setup_commands(bot):
         current_volume = int(yt_player.get_volume(guild_id) * 100)
         embed.set_footer(text=f"Volume: {current_volume}% | Use /kv_volume to change")
         
-        await interaction.response.send_message(embed=embed)
-
-#volume command ----------------------------------------------------------------------------------------------------- volume command
-    @bot.tree.command(name="kv_volume", description="Set music volume (0-100)")
-    @app_commands.describe(volume="Volume level (0-100)")
-    async def volume(interaction: discord.Interaction, volume: int):
-        if not 0 <= volume <= 100:
-            await interaction.response.send_message("❌ Volume must be between 0-100!", ephemeral=True)
-            return
-        
-        voice_client = interaction.guild.voice_client
-        if voice_client:
-            yt_player.set_volume(interaction.guild.id, volume / 100)
-            await interaction.response.send_message(f"🔊 Music volume set to {volume}%")
-        else:
-            await interaction.response.send_message("❌ Not connected to voice channel!", ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True, delete_after=min(30, max(5, len(queue_list) * 3)))
 
 #nowplaying command ----------------------------------------------------------------------------------------------------- nowplaying command
     @bot.tree.command(name="kv_nowplaying", description="Show what's currently playing")
@@ -352,6 +320,100 @@ def setup_commands(bot):
             queue_length = len(yt_player.get_queue(guild_id))
             embed.add_field(name="Queue", value=f"{queue_length} songs", inline=True)
             
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True, delete_after=15)
         else:
-            await interaction.response.send_message("❌ Nothing is currently playing!", ephemeral=True)
+            await interaction.response.send_message("❌ Nothing is currently playing!", ephemeral=True, delete_after=5)
+
+#skip command ----------------------------------------------------------------------------------------------------- skip command
+    @bot.tree.command(name="kv_skip", description="Skip the current song")
+    async def skip(interaction: discord.Interaction):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            audio_mgr.stop_audio(voice_client)
+            await interaction.response.send_message("⏭️ Skipped current song!", delete_after=5)
+        else:
+            await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True, delete_after=5)
+
+#stop command ----------------------------------------------------------------------------------------------------- stop command
+    @bot.tree.command(name="kv_stop", description="Stop music and clear queue")
+    async def stop_music(interaction: discord.Interaction):
+        voice_client = interaction.guild.voice_client
+        if voice_client:
+            yt_player.stop_music(interaction.guild.id)
+            audio_mgr.stop_audio(voice_client)
+            await interaction.response.send_message("⏹️ Stopped music and cleared queue!", delete_after=5)
+        else:
+            yt_player.stop_music(interaction.guild.id)
+            await interaction.response.send_message("❌ Not connected to voice!", ephemeral=True, delete_after=5)
+
+#volume command ----------------------------------------------------------------------------------------------------- volume command
+    @bot.tree.command(name="kv_volume", description="Set music volume (0-100)")
+    @app_commands.describe(volume="Volume level (0-100)")
+    async def volume(interaction: discord.Interaction, volume: int):
+        if not 0 <= volume <= 100:
+            await interaction.response.send_message("❌ Volume must be between 0-100!", ephemeral=True, delete_after=15)
+            return
+        
+        voice_client = interaction.guild.voice_client
+        if voice_client:
+            yt_player.set_volume(interaction.guild.id, volume / 100)
+            await interaction.response.send_message(f"🔊 Music volume set to {volume}%", delete_after=5)
+        else:
+            await interaction.response.send_message("❌ Not connected to voice channel!", ephemeral=True, delete_after=15)
+
+#background command ----------------------------------------------------------------------------------------------------- background command
+    @bot.tree.command(name="kv_background", description="Set background music volume (0-100)")
+    @app_commands.describe(volume="Volume level (0-100)")
+    async def background(interaction: discord.Interaction, volume: int):
+        if not 0 <= volume <= 100:
+            await interaction.response.send_message("Volume must be between 0-100", ephemeral=True, delete_after=15)
+            return
+        
+        scaled_volume = (volume / 100) * 2.0
+        
+        audio_mgr.set_background_volume(interaction.guild.id, scaled_volume)
+        await interaction.response.send_message(f"Background music volume set to {volume}%", delete_after=5)
+
+#clearchat command ----------------------------------------------------------------------------------------------------- clearchat command
+    @bot.tree.command(name="kv_clearchat", description="Delete messages from chat (Admin only)")
+    @app_commands.describe(amount="Number of messages to delete (1-100)")
+    async def clearchat(interaction: discord.Interaction, amount: int):
+        # Check permissions
+        if not (interaction.user.guild_permissions.administrator or 
+                interaction.user.name == "adbreeker" or
+                interaction.user.id == interaction.guild.owner_id):
+            await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True, delete_after=5)
+            return
+        
+        # Validate amount
+        if not 1 <= amount <= 100:
+            await interaction.response.send_message("❌ Amount must be between 1-100!", ephemeral=True, delete_after=15)
+            return
+        
+        # Check bot permissions
+        if not interaction.channel.permissions_for(interaction.guild.me).manage_messages:
+            await interaction.response.send_message("❌ I don't have permission to delete messages in this channel!", ephemeral=True, delete_after=5)
+            return
+        
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Delete messages
+            deleted = await interaction.channel.purge(limit=amount)
+            
+            # Send confirmation
+            embed = discord.Embed(
+                title="🗑️ Messages Deleted",
+                description=f"Successfully deleted **{len(deleted)}** messages",
+                color=0xff4444
+            )
+            embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to delete messages!", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"❌ Failed to delete messages: {str(e)}", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)

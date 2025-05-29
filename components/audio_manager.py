@@ -65,13 +65,14 @@ async def play_background(voice_client):
     guild_id = voice_client.guild.id
     print("Preparing to play background music in", voice_client.channel.name)
 
-    async def play_next(_):
+    async def play_next(counter):
         await asyncio.sleep(0.5)
         if voice_client.is_connected():
             if voice_client.is_playing():
-                print(f"Waiting for background music to finish in {voice_client.channel.name}")
+                if counter % 60 == 0:
+                    print(f"Waiting to start background music in {voice_client.channel.name}")
                 await asyncio.sleep(1)
-                await play_next(None)
+                await play_next(counter+1)
             else:
                 print(f"Playing background music in {voice_client.channel.name}")
                 volume = background_volumes.get(guild_id, 0.0)
@@ -87,13 +88,13 @@ async def play_background(voice_client):
                     # Clean up the source reference
                     current_background_music.pop(guild_id, None)
                     # Don't restart listening - it's already active during transcription
-                    asyncio.run_coroutine_threadsafe(play_next(e), loop)
+                    asyncio.run_coroutine_threadsafe(play_next(0), loop)
                 voice_client.play(source, after=after_callback)
         else:
             print(f"Voice client is not connected in {voice_client.channel.name}")
             return
 
-    await play_next(None)
+    await play_next(0)
 
 def set_background_volume(guild_id, volume):
     background_volumes[guild_id] = volume
