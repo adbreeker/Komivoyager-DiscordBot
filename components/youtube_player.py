@@ -65,18 +65,25 @@ async def play(voice_client, guild_id, source):
             # Set volume if specified
         if guild_id in audio_mgr.music_volumes:
             source.volume = audio_mgr.music_volumes[guild_id]
-            
+
+        # Stop whatever is playing
+        audio_mgr.stop_audio(voice_client)
         audio_mgr.current_youtube_players[guild_id] = source
         loop = asyncio.get_running_loop()
 
         def after_playing(error):
             if error:
                 print(f'Player error: {error}')
-            audio_mgr.current_youtube_players.pop(guild_id, None)
-            fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
+            if audio_mgr.current_youtube_players.get(guild_id) == source:
+                audio_mgr.current_youtube_players.pop(guild_id, None)
+                print(f"Launching play_next() after {source.title} in {voice_client.channel.name}")
+                fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
+            elif audio_mgr.current_youtube_players.get(guild_id) == None:
+                print(f"Launching play_next() after None in {voice_client.channel.name}")
+                fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
+            else:
+                print(f"Skipping play_next() because {source.title} is not the current player in {voice_client.channel.name}, right now: {audio_mgr.current_youtube_players.get(guild_id)}")
             
-        # Stop whatever is playing
-        audio_mgr.stop_audio(voice_client)
         voice_client.play(source, after=after_playing)
     except Exception as e:
         print(f"Error playing song: {e}")
@@ -94,15 +101,21 @@ async def play_instantly(voice_client, guild_id, url):
 async def play_next(voice_client, guild_id):
     """Play the next song in the queue"""
     try:
-        await asyncio.sleep(0.1)  # Allow time for cleanup
-        if guild_id in audio_mgr.music_queues and audio_mgr.music_queues[guild_id]:
+        #await asyncio.sleep(0.1)  # Allow time for the current song to finish
+        if guild_id in audio_mgr.music_queues and audio_mgr.music_queues.get(guild_id):
+            print(f"Songs in queue for guild {guild_id}: {len(audio_mgr.music_queues[guild_id])}")
             if audio_mgr.get_current_audio_type(guild_id) in ['background', None]:
                 source = audio_mgr.music_queues[guild_id].pop(0)
+                print(f"Playing next song: {source.title} in {voice_client.channel.name}")
                 await play(voice_client, guild_id, source)
                 return source.title, source.uploader
             elif audio_mgr.get_current_audio_type(guild_id) != 'youtube':
                 loop = asyncio.get_running_loop()
                 fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
+            else:
+                print(f"Canceling play_next() because youtube is currenlty plying in {voice_client.channel.name}")
+        else:
+            print(f"No songs in queue for guild {guild_id}")
     except Exception as e:
         print(f"Error playing next song: {e}")
     return None, None
