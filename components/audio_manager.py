@@ -52,16 +52,12 @@ def stop_audio(voice_client):
                         source.cleanup()
                     except Exception as e:
                         print(f"Error stopping source: {e}")
-                storage.pop(guild_id, None)
             # Force stop by setting internal state (this is a workaround)
             voice_client._player = None
         # Keep the voice receiver active - don't restart listening
     else:
         # If not transcribing, use the normal stop method
         voice_client.stop()
-        current_background_music.pop(guild_id, None)
-        current_voice_sources.pop(guild_id, None)
-        current_youtube_players.pop(guild_id, None)
 
 async def play_background(voice_client):
     ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
