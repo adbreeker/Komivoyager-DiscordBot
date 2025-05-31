@@ -5,11 +5,14 @@ from discord.ext import voice_recv
 import components.youtube_player as yt_player
 import components.audio_manager as audio_mgr
 import components.utilis as utils
+from datetime import datetime
 
 def setup_commands(bot):
 #help command ----------------------------------------------------------------------------------------------------- help command
     @bot.tree.command(name="kv_help", description="Shows all available commands and their usage")
     async def help(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_help' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         embed = discord.Embed(
             title="🤖 Komivoyager Help Page",
             description="Here are all available commands and important informations:",
@@ -105,12 +108,14 @@ def setup_commands(bot):
 #hello command ----------------------------------------------------------------------------------------------------- hello command
     @bot.tree.command(name="kv_hello", description="Greets you back!")
     async def hello(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_hello' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
         await interaction.response.send_message(f"Hello {interaction.user.mention}!")
 
 #echo command ----------------------------------------------------------------------------------------------------- echo command
     @bot.tree.command(name="kv_echo", description="Replies with your message.")
     @app_commands.describe(message="The message to echo")
     async def echo(interaction: discord.Interaction, message: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_echo' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with message: '{message}'")
         await interaction.response.send_message("✓", ephemeral=True, delete_after=0.1)
         await interaction.channel.send(message)
 
@@ -118,6 +123,7 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_demokracja", description="Creates a quick poll.")
     @app_commands.describe(question="The poll question")
     async def demokracja(interaction: discord.Interaction, question: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_demokracja' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with question: '{question}'")
         embed = discord.Embed(title="Demokracja!", description=question, color=0x00ff00)
         poll_message = await interaction.channel.send(embed=embed)
         await poll_message.add_reaction('👍')
@@ -127,6 +133,8 @@ def setup_commands(bot):
 #join command ----------------------------------------------------------------------------------------------------- join command
     @bot.tree.command(name="kv_join", description="Joins a voice channel.")
     async def join(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_join' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         if interaction.user.voice:
             channel = interaction.user.voice.channel
             voice_client = interaction.guild.voice_client
@@ -145,6 +153,8 @@ def setup_commands(bot):
 #leave command ----------------------------------------------------------------------------------------------------- leave command
     @bot.tree.command(name="kv_leave", description="Leaves the voice channel.")
     async def leave(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_leave' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_connected():
             await voice_client.disconnect()
@@ -156,6 +166,8 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_transcript", description="Enable or disable voice transcription.")
     @app_commands.describe(action="on,off or status")
     async def transcript(interaction: discord.Interaction, action: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_transcript' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with action: '{action}'")
+        
         guild_id = interaction.guild.id
         if action.lower() == "status":            
             if voice_transcriber.is_transcribing(guild_id):
@@ -192,6 +204,8 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_play", description="Play a song instantly (stops current music)")
     @app_commands.describe(query="YouTube URL or search query (optional - leave empty to play from queue)")
     async def play(interaction: discord.Interaction, query: str = ""):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_play' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with query: '{query if query else 'empty (play from queue)'}'")
+        
         if not interaction.user.voice:
             await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True, delete_after=5)
             return
@@ -228,6 +242,7 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_enqueue", description="Add a song to the queue")
     @app_commands.describe(query="YouTube URL or search query")
     async def enqueue(interaction: discord.Interaction, query: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_enqueue' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with query: '{query}'")
         
         await interaction.response.defer(ephemeral=True)
         
@@ -251,6 +266,8 @@ def setup_commands(bot):
 #clearqueue command ----------------------------------------------------------------------------------------------------- clearqueue command
     @bot.tree.command(name="kv_clearqueue", description="Clear the music queue")
     async def clearqueue(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_clearqueue' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         guild_id = interaction.guild.id
         queue_list = yt_player.get_queue(guild_id)
         
@@ -269,6 +286,8 @@ def setup_commands(bot):
 #queue command ----------------------------------------------------------------------------------------------------- queue command
     @bot.tree.command(name="kv_queue", description="Show the current music queue")
     async def queue(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_queue' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         guild_id = interaction.guild.id
         current_title, current_uploader = yt_player.get_current_song_info(guild_id)
         queue_list = yt_player.get_queue(guild_id)
@@ -304,6 +323,8 @@ def setup_commands(bot):
 #nowplaying command ----------------------------------------------------------------------------------------------------- nowplaying command
     @bot.tree.command(name="kv_nowplaying", description="Show what's currently playing")
     async def nowplaying(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_nowplaying' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         guild_id = interaction.guild.id
         current_title, current_uploader = yt_player.get_current_song_info(guild_id)
         
@@ -329,6 +350,8 @@ def setup_commands(bot):
 #skip command ----------------------------------------------------------------------------------------------------- skip command
     @bot.tree.command(name="kv_skip", description="Skip the current song")
     async def skip(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_skip' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_playing():
             audio_mgr.stop_audio(voice_client)
@@ -339,6 +362,8 @@ def setup_commands(bot):
 #stop command ----------------------------------------------------------------------------------------------------- stop command
     @bot.tree.command(name="kv_stop", description="Stop music and clear queue")
     async def stop_music(interaction: discord.Interaction):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_stop' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+        
         voice_client = interaction.guild.voice_client
         if voice_client:
             yt_player.stop_music(interaction.guild.id)
@@ -352,6 +377,8 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_volume", description="Set music volume (0-100)")
     @app_commands.describe(volume="Volume level (0-100)")
     async def volume(interaction: discord.Interaction, volume: int):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_volume' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with volume: {volume}")
+        
         if not 0 <= volume <= 100:
             await interaction.response.send_message("❌ Volume must be between 0-100!", ephemeral=True, delete_after=15)
             return
@@ -367,6 +394,8 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_background", description="Set background music volume (0-100)")
     @app_commands.describe(volume="Volume level (0-100)")
     async def background(interaction: discord.Interaction, volume: int):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_background' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with volume: {volume}")
+        
         if not 0 <= volume <= 100:
             await interaction.response.send_message("Volume must be between 0-100", ephemeral=True, delete_after=15)
             return
@@ -380,10 +409,13 @@ def setup_commands(bot):
     @bot.tree.command(name="kv_clearchat", description="Delete messages from chat (Admin only)")
     @app_commands.describe(amount="Number of messages to delete (1-100)")
     async def clearchat(interaction: discord.Interaction, amount: int):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_clearchat' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with amount: {amount}")
+        
         # Check permissions
         if not (interaction.user.guild_permissions.administrator or 
                 interaction.user.name == "adbreeker" or
                 interaction.user.id == interaction.guild.owner_id):
+            print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] User {interaction.user.name} ({interaction.user.id}) tried to use kv_clearchat without permission")
             await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True, delete_after=5)
             return
         
@@ -403,6 +435,8 @@ def setup_commands(bot):
             # Delete messages
             deleted = await interaction.channel.purge(limit=amount)
             
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Successfully deleted {len(deleted)} messages in channel {interaction.channel.name} ({interaction.channel.id})")
+            
             # Send confirmation
             embed = discord.Embed(
                 title="🗑️ Messages Deleted",
@@ -414,8 +448,11 @@ def setup_commands(bot):
             await interaction.followup.send(embed=embed, ephemeral=True)
             
         except discord.Forbidden:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Failed to delete messages - Forbidden permission")
             await interaction.followup.send("❌ I don't have permission to delete messages!", ephemeral=True)
         except discord.HTTPException as e:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] HTTP error during message deletion: {str(e)}")
             await interaction.followup.send(f"❌ Failed to delete messages: {str(e)}", ephemeral=True)
         except Exception as e:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Unexpected error during message deletion: {str(e)}")
             await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)

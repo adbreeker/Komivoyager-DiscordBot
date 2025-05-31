@@ -4,6 +4,7 @@ import asyncio
 import imageio_ffmpeg
 from discord import FFmpegPCMAudio, PCMVolumeTransformer
 import components.audio_manager as audio_mgr
+from datetime import datetime
 
 # Get bundled FFmpeg executable
 ffmpeg_executable = imageio_ffmpeg.get_ffmpeg_exe()
@@ -73,18 +74,18 @@ async def play(voice_client, guild_id, source):
 
         def after_playing(error):
             if error:
-                print(f'Player error: {error}')
+                print(f'[ERROR - {datetime.now().strftime("%H:%M:%S")}] Player error: {error}')
             # Only proceed if this source is still the current one
             if audio_mgr.current_youtube_players.get(guild_id) == source:
                 audio_mgr.current_youtube_players.pop(guild_id, None)
-                print(f"Launching play_next() after {source.title}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Launching play_next() after {source.title}")
                 fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
             else:
-                print(f"Skipping callback - source {source.title} is no longer current")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Skipping callback - source {source.title} is no longer current")
 
         voice_client.play(source, after=after_playing)
     except Exception as e:
-        print(f"Error playing song: {e}")
+        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error playing song: {e}")
 
 async def play_instantly(voice_client, guild_id, url):
     """Play a song instantly (stops current music)"""
@@ -93,7 +94,7 @@ async def play_instantly(voice_client, guild_id, url):
         await play(voice_client, guild_id, source)
         return source.title, source.uploader
     except Exception as e:
-        print(f"Error playing instantly: {e}")
+        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error playing instantly: {e}")
         return None, None
     
 async def play_next(voice_client, guild_id):
@@ -101,21 +102,21 @@ async def play_next(voice_client, guild_id):
     try:
         await asyncio.sleep(0.1) 
         if guild_id in audio_mgr.music_queues and audio_mgr.music_queues.get(guild_id):
-            print(f"Songs in queue for guild {guild_id}: {len(audio_mgr.music_queues[guild_id])}")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Songs in queue for guild {guild_id}: {len(audio_mgr.music_queues[guild_id])}")
             if audio_mgr.get_current_audio_type(guild_id) in ['background', None]:
                 source = audio_mgr.music_queues[guild_id].pop(0)
-                print(f"Playing next song: {source.title} in {voice_client.channel.name}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Playing next song: {source.title} in {voice_client.channel.name}")
                 await play(voice_client, guild_id, source)
                 return source.title, source.uploader
             elif audio_mgr.get_current_audio_type(guild_id) != 'youtube':
                 loop = asyncio.get_running_loop()
                 fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
             else:
-                print(f"Canceling play_next() because youtube is currenlty plying in {voice_client.channel.name}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Canceling play_next() because youtube is currently playing in {voice_client.channel.name}")
         else:
-            print(f"No songs in queue for guild {guild_id}")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] No songs in queue for guild {guild_id}")
     except Exception as e:
-        print(f"Error playing next song: {e}")
+        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error playing next song: {e}")
     return None, None
     
 async def add_to_queue(guild_id, url):
@@ -127,7 +128,7 @@ async def add_to_queue(guild_id, url):
         audio_mgr.music_queues[guild_id].append(source)
         return source.title, source.uploader
     except Exception as e:
-        print(f"Error adding to queue: {e}")
+        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error adding to queue: {e}")
         return None, None
 
 def get_queue(guild_id):

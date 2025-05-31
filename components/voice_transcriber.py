@@ -27,15 +27,15 @@ def load_whisper_model(model_size="turbo", device="cuda", compute_type="float32"
     global whisper_model
     try:
         if whisper_model is not None:
-            print("[INFO] Whisper model already loaded")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model already loaded")
             return True
         
-        print(f"[INFO] Loading Whisper model: {model_size} on {device}")
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Loading Whisper model: {model_size} on {device}")
         whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
-        print("[INFO] Whisper model loaded successfully")
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model loaded successfully")
         return True
     except Exception as e:
-        print(f"[ERROR] Failed to load Whisper model: {e}")
+        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Failed to load Whisper model: {e}")
         whisper_model = None
         return False
     
@@ -45,11 +45,11 @@ def unload_whisper_model():
     try:
         # Check if any transcription is still active
         if is_any_transcribing():
-            print("[WARNING] Cannot unload model - transcription still active in some guilds")
+            print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Cannot unload model - transcription still active in some guilds")
             return False
             
         if whisper_model is not None:
-            print("[INFO] Unloading Whisper model")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Unloading Whisper model")
             whisper_model = None
             
             # Clear CUDA cache if available
@@ -57,20 +57,20 @@ def unload_whisper_model():
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                    print("[INFO] CUDA cache cleared")
+                    print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] CUDA cache cleared")
             except Exception as e:
-                print(f"[WARNING] CUDA cache clear failed: {e}")
+                print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] CUDA cache clear failed: {e}")
             
             gc.collect()
             
-            print("[INFO] Whisper model unloaded successfully")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model unloaded successfully")
             return True
         else:
-            print("[INFO] Whisper model is not loaded")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model is not loaded")
             return True
             
     except Exception as e:
-        print(f"[ERROR] Critical error during model unloading: {e}")
+        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Critical error during model unloading: {e}")
         return False
 
 def get_transcript_file(guild_id):
@@ -123,7 +123,7 @@ class WhisperSink(voice_recv.BasicSink):
         try:
             # Check if model is loaded before processing
             if whisper_model is None:
-                print(f"[WARNING] Whisper model not loaded, skipping transcription for {user_name}")
+                print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Whisper model not loaded, skipping transcription for {user_name}")
                 return
             
             raw = buffer_data
@@ -200,7 +200,7 @@ class WhisperSink(voice_recv.BasicSink):
                 with open(file_path, "a", encoding="utf-8") as f:
                     f.write(f"{now_str} - {user_name}: {text}\n")
         except Exception as e:
-            print(f"[ERROR] Exception in process_buffer for {user_name} ({guild_id}): {e}")
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Exception in process_buffer for {user_name} ({guild_id}): {e}")
 
 # Create a dictionary to hold per-user executors
 user_executors = {}
@@ -226,7 +226,7 @@ def silence_watcher():
                 try:
                     executor.submit(WhisperSink().process_buffer, guild_id, user_id, user_name, buffer_copy)
                 except Exception as e:
-                    print(f"[ERROR] Failed to submit process_buffer for {user_name} ({guild_id}): {e}")
+                    print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Failed to submit process_buffer for {user_name} ({guild_id}): {e}")
         time.sleep(0.2)
 
 threading.Thread(target=silence_watcher, daemon=True).start()

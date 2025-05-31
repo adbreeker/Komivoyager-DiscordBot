@@ -3,6 +3,7 @@ import discord
 import imageio_ffmpeg
 from mutagen.mp3 import MP3
 from components.voice_transcriber import is_transcribing
+from datetime import datetime
 
 # Global audio state management
 current_background_music = {}  # guild_id: background_music_source
@@ -51,7 +52,7 @@ def stop_audio(voice_client):
                     try:
                         source.cleanup()
                     except Exception as e:
-                        print(f"Error stopping source: {e}")
+                        print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error stopping source: {e}")
             # Force stop by setting internal state (this is a workaround)
             voice_client._player = None
         # Keep the voice receiver active - don't restart listening
@@ -63,18 +64,18 @@ async def play_background(voice_client):
     ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
     mp3_path = "assets/sounds/flute-background.mp3"
     guild_id = voice_client.guild.id
-    print("Preparing to play background music in", voice_client.channel.name)
+    print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Preparing to play background music in {voice_client.channel.name}")
 
     async def play_next(counter):
         await asyncio.sleep(0.5)
         if voice_client.is_connected():
             if voice_client.is_playing():
                 if counter % 60 == 0:
-                    print(f"Waiting to start background music in {voice_client.channel.name}")
+                    print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Waiting to start background music in {voice_client.channel.name}")
                 await asyncio.sleep(1)
                 await play_next(counter+1)
             else:
-                print(f"Playing background music in {voice_client.channel.name}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Playing background music in {voice_client.channel.name}")
                 volume = background_volumes.get(guild_id, 0.0)
                 ffmpeg_source = discord.FFmpegPCMAudio(
                     mp3_path,
@@ -91,7 +92,7 @@ async def play_background(voice_client):
                     asyncio.run_coroutine_threadsafe(play_next(0), loop)
                 voice_client.play(source, after=after_callback)
         else:
-            print(f"Voice client is not connected in {voice_client.channel.name}")
+            print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Voice client is not connected in {voice_client.channel.name}")
             return
 
     await play_next(0)
@@ -104,4 +105,4 @@ def set_background_volume(guild_id, volume):
             try:
                 source.volume = volume
             except Exception as e:
-                print(f"Error setting background volume: {e}")
+                print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error setting background volume: {e}")

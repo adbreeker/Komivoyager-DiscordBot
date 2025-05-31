@@ -2,6 +2,7 @@ import discord
 import asyncio
 import components.voice_transcriber as voice_transcriber
 from components.audio_manager import play_background
+from datetime import datetime
 
 def setup_events(bot):
     @bot.event
@@ -27,7 +28,7 @@ def setup_events(bot):
         # bot state changes
         if member.bot:
             if after.channel is not None:
-                print(f"{member.name} joined {voice_client.channel.name}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] {member.name} joined {voice_client.channel.name}")
                 # Wait until the bot is fully connected to voice
                 while not voice_client.is_connected():
                     await asyncio.sleep(0.1)
@@ -36,7 +37,7 @@ def setup_events(bot):
                 bot.loop.create_task(play_background(voice_client))
 
             if after.channel is None and voice_client:
-                print(f"{member.name} left from {voice_client.channel.name}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] {member.name} left from {voice_client.channel.name}")
                 await voice_transcriber.stop_recording(guild_id)
 
         # user state changes
