@@ -156,8 +156,3 @@ def set_volume(guild_id, volume):
 def get_volume(guild_id):
     """Get current volume"""
     return audio_mgr.music_volumes.get(guild_id, 0.5)
-
-def stop_music(guild_id):
-    """Stop music and clear queue"""
-    clear_queue(guild_id)
-    audio_mgr.current_youtube_players.pop(guild_id, None)
