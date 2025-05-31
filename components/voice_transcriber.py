@@ -1,4 +1,3 @@
-import asyncio
 import threading
 import concurrent.futures
 from discord.ext import voice_recv
@@ -8,9 +7,10 @@ from scipy.signal import resample, butter, filtfilt, wiener
 import time
 import os
 from datetime import datetime
+import gc
 
-# Load faster-whisper model once
-whisper_model = WhisperModel("turbo", device="cuda", compute_type="float32")
+
+whisper_model = None
 
 user_audio_buffers = {}
 user_last_audio_time = {}
@@ -20,8 +20,58 @@ SILENCE_TIMEOUT = 0.5  #seconds
 transcribing_enabled = {}  # guild_id: bool
 current_voice_clients = {}  # guild_id: voice_client
 
-# Track the current transcript file per guild
 transcript_files = {}  # guild_id: (file_path, start_datetime)
+
+def load_whisper_model(model_size="turbo", device="cuda", compute_type="float32"):
+    """Load the Whisper model with specified parameters"""
+    global whisper_model
+    try:
+        if whisper_model is not None:
+            print("[INFO] Whisper model already loaded")
+            return True
+        
+        print(f"[INFO] Loading Whisper model: {model_size} on {device}")
+        whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        print("[INFO] Whisper model loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to load Whisper model: {e}")
+        whisper_model = None
+        return False
+    
+def unload_whisper_model():
+    """Unload the Whisper model and clear CUDA cache"""
+    global whisper_model
+    try:
+        # Check if any transcription is still active
+        if is_any_transcribing():
+            print("[WARNING] Cannot unload model - transcription still active in some guilds")
+            return False
+            
+        if whisper_model is not None:
+            print("[INFO] Unloading Whisper model")
+            whisper_model = None
+            
+            # Clear CUDA cache if available
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    print("[INFO] CUDA cache cleared")
+            except Exception as e:
+                print(f"[WARNING] CUDA cache clear failed: {e}")
+            
+            gc.collect()
+            
+            print("[INFO] Whisper model unloaded successfully")
+            return True
+        else:
+            print("[INFO] Whisper model is not loaded")
+            return True
+            
+    except Exception as e:
+        print(f"[ERROR] Critical error during model unloading: {e}")
+        return False
 
 def get_transcript_file(guild_id):
     # If already open, return path
@@ -71,6 +121,11 @@ class WhisperSink(voice_recv.BasicSink):
 
     def process_buffer(self, guild_id, user_id, user_name, buffer_data):
         try:
+            # Check if model is loaded before processing
+            if whisper_model is None:
+                print(f"[WARNING] Whisper model not loaded, skipping transcription for {user_name}")
+                return
+            
             raw = buffer_data
             audio_data = np.frombuffer(raw, np.int16)
             if audio_data.ndim == 1 and len(audio_data) % 2 == 0:
@@ -179,28 +234,29 @@ threading.Thread(target=silence_watcher, daemon=True).start()
 def is_transcribing(guild_id):
     return transcribing_enabled.get(guild_id, False)
 
-def set_transcribing(guild_id, value):
+def is_any_transcribing():
+    """Check if any guild is currently transcribing"""
+    return any(transcribing_enabled.values())
+
+def set_transcribing(guild_id, value : bool):
     transcribing_enabled[guild_id] = value
-    if not value:
+    if value:
+        load_whisper_model()
+    else:
+        unload_whisper_model()
         close_transcript_file(guild_id)
 
 async def start_recording(vc):
     guild_id = vc.guild.id
     current_voice_clients[guild_id] = vc
-    try:
-        vc.stop_listening()
-    except Exception:
-        pass
-    if is_transcribing(guild_id):
-        get_transcript_file(guild_id)  # Ensure file is created
-        vc.listen(WhisperSink())
+    vc.stop_listening() 
+    get_transcript_file(guild_id)
+    vc.listen(WhisperSink())
+        
 
 async def stop_recording(guild_id):
     vc = current_voice_clients.get(guild_id)
     if vc:
-        try:
-            vc.stop_listening()
-        except Exception:
-            pass
+        vc.stop_listening()
         current_voice_clients.pop(guild_id, None)
     close_transcript_file(guild_id)

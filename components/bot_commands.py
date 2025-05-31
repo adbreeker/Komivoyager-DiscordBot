@@ -167,22 +167,24 @@ def setup_commands(bot):
         if not interaction.user.voice or not interaction.user.voice.channel:
             await interaction.response.send_message("You must be in a voice channel.", ephemeral=True, delete_after=5)
             return
-
+        
         voice_client = interaction.guild.voice_client
         if action.lower() == "on":
+            await interaction.response.defer(ephemeral=True)
             voice_transcriber.set_transcribing(guild_id, True)
             if voice_client:
                 await voice_client.disconnect() 
             voice_client = await interaction.user.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
             await voice_transcriber.start_recording(voice_client)
-            await interaction.response.send_message("Transcription enabled.", ephemeral=True, delete_after=5)
+            await interaction.followup.send("Transcription enabled.", ephemeral=True)
         elif action.lower() == "off":
+            await interaction.response.defer(ephemeral=True)
             voice_transcriber.set_transcribing(guild_id, False)
             if voice_client:
                 await voice_client.disconnect() 
                 voice_client = await interaction.user.voice.channel.connect()
             await voice_transcriber.stop_recording(guild_id)
-            await interaction.response.send_message("Transcription disabled.", ephemeral=True, delete_after=5)
+            await interaction.followup.send("Transcription disabled.", ephemeral=True)
         else:
             await interaction.response.send_message("Wrong command!\nUsage: /kv_transcript {on/off/status}", ephemeral=True, delete_after=15)
 
