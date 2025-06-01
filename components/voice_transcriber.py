@@ -1,3 +1,4 @@
+import discord
 import threading
 import concurrent.futures
 from discord.ext import voice_recv
@@ -8,6 +9,7 @@ import time
 import os
 from datetime import datetime
 import gc
+from pathlib import Path
 
 
 whisper_model = None
@@ -260,3 +262,37 @@ async def stop_recording(guild_id):
         vc.stop_listening()
         current_voice_clients.pop(guild_id, None)
     close_transcript_file(guild_id)
+
+def get_transcripts(guild_id):
+    """Get a list of transcript files for the given guild ID"""   
+    guild_folder = f"transcripts/Guild_{guild_id}"
+    transcript_files = []
+    if not os.path.exists(guild_folder):
+        return []
+            
+    for file_path in Path(guild_folder).glob("*.txt"):
+        stat = file_path.stat()
+        transcript_files.append((file_path, stat.st_mtime))
+
+    if not transcript_files:
+        return []
+    transcript_files.sort(key=lambda x: x[1], reverse=True)
+
+    options = []
+    # Limit to the last 25 files - discord has a limit of 25 options per select menu
+    for i, (file_path, mtime) in enumerate(transcript_files[:25]):
+        file_date = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        file_size = file_path.stat().st_size
+        size_kb = file_size / 1024
+        
+        # Create label with date and size
+        label = f"{file_path.stem} ({size_kb:.1f}KB)"
+        description = f"Modified: {file_date}"
+        
+        options.append(discord.SelectOption(
+            label=label,
+            description=description,
+            value=str(file_path)
+        ))
+    return options
+

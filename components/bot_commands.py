@@ -57,7 +57,7 @@ def setup_commands(bot):
                 "`/kv_transcript on` - Enable voice transcription\n"
                 "`/kv_transcript off` - Disable voice transcription\n"
                 "`/kv_transcript status` - Check transcription status\n"
-                "   • Transcripts are saved to `transcripts/Guild_<id>/YYYY-MM-DD.txt`"
+                "`/kv_transcript get` - Choose one of saved transcripts and get it as attachment\n"
             ),
             inline=False
         )
@@ -164,18 +164,78 @@ def setup_commands(bot):
 
 #transcript command ----------------------------------------------------------------------------------------------------- transcript command
     @bot.tree.command(name="kv_transcript", description="Enable or disable voice transcription.")
-    @app_commands.describe(action="on,off or status")
+    @app_commands.describe(action="on, off, status, or get")
     async def transcript(interaction: discord.Interaction, action: str):
         print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_transcript' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with action: '{action}'")
         
         guild_id = interaction.guild.id
+        
         if action.lower() == "status":            
             if voice_transcriber.is_transcribing(guild_id):
                 await interaction.response.send_message("Transcription is currently enabled.", ephemeral=True, delete_after=5)
             else:
                 await interaction.response.send_message("Transcription is currently disabled.", ephemeral=True, delete_after=5)
             return
+        
+        if action.lower() == "get":
+            await interaction.response.defer(ephemeral=True)
+            
+            transcript_files = voice_transcriber.get_transcripts(guild_id)
+            
+            if not transcript_files:
+                await interaction.followup.send("❌ No transcript files found for this guild.", ephemeral=True)
+                return
+            
+            options = voice_transcriber.get_transcripts(guild_id)
+            
+            # Create dropdown view
+            class TranscriptSelect(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=60)
+                
+                @discord.ui.select(
+                    placeholder="Choose a transcript file...",
+                    options=options,
+                    min_values=1,
+                    max_values=1
+                )
+                async def select_transcript(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+                    selected_file = select.values[0]
+                    
+                    discord_file = utils.get_file_as_discord_file(selected_file)
+                    if discord_file is None:
+                        await select_interaction.response.send_message(
+                            "❌ Error reading transcript file. It may be too large or corrupted.",
+                            ephemeral=True,
+                            delete_after=5
+                        )
+                    else:
+                        file_name = discord_file.filename
+                        await select_interaction.response.send_message(
+                            f"📄 **Transcript: {file_name}**",
+                            file=discord_file,
+                            ephemeral=True
+                        )
+                            
+                        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Transcript file '{file_name}' sent to {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
+                
+                async def on_timeout(self):
+                    # Disable all components when timeout occurs
+                    for item in self.children:
+                        item.disabled = True
+            
+            view = TranscriptSelect()
+            embed = discord.Embed(
+                title="📄 Available Transcripts",
+                description=f"Found **{len(transcript_files)}** transcript files for this guild.\nSelect one to view:",
+                color=0x00ff00
+            )
+            embed.set_footer(text="Selection expires in 60 seconds")
+            
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            return
 
+        # transcribe on/off actions
         if not interaction.user.voice or not interaction.user.voice.channel:
             await interaction.response.send_message("You must be in a voice channel.", ephemeral=True, delete_after=5)
             return
@@ -198,7 +258,7 @@ def setup_commands(bot):
             await voice_transcriber.stop_recording(guild_id)
             await interaction.followup.send("Transcription disabled.", ephemeral=True)
         else:
-            await interaction.response.send_message("Wrong command!\nUsage: /kv_transcript {on/off/status}", ephemeral=True, delete_after=15)
+            await interaction.response.send_message("Wrong command!\nUsage: /kv_transcript {on/off/status/get}", ephemeral=True, delete_after=15)
 
 #play command (instant play) ----------------------------------------------------------------------------------------------------- play command
     @bot.tree.command(name="kv_play", description="Play a song instantly (stops current music)")
