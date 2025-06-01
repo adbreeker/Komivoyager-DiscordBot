@@ -52,7 +52,7 @@ def unload_whisper_model():
             
         if whisper_model is not None:
             print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Unloading Whisper model")
-            whisper_model = None
+            del whisper_model
             
             # Clear CUDA cache if available
             try:
@@ -64,6 +64,8 @@ def unload_whisper_model():
                 print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] CUDA cache clear failed: {e}")
             
             gc.collect()
+
+            whisper_model = None
             
             print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model unloaded successfully")
             return True
@@ -178,7 +180,7 @@ class WhisperSink(voice_recv.BasicSink):
                 audio_data,
                 language="pl",
                 task="transcribe",
-                temperature=0.3,  # Lower temperature = more conservative
+                temperature=0.0,  # Lower temperature = more conservative
                 beam_size=25,      # Reduce beam size for faster, more focused results
                 best_of=25,                
                 patience=2.0,     # Lower patience
