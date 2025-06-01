@@ -72,8 +72,8 @@ def setup_commands(bot):
                 "`/kv_clearqueue` - Clear the music queue\n"
                 "`/kv_queue` - Show current queue\n"
                 "`/kv_nowplaying` - Show current song\n"
-                "`/kv_skip` - Skip current song\n"
-                "`/kv_stop` - Stop music and clear queue\n"
+                "`/kv_skip` - Skip current sound/music\n"
+                "`/kv_stop` - Stop current sound/music and clear queue\n"
                 "`/kv_volume <0-100>` - Set music volume\n"
                 "`/kv_background <0-100>` - Set background music volume\n"
             ),
