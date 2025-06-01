@@ -32,13 +32,11 @@ def setup_events(bot):
                 # Wait until the bot is fully connected to voice
                 while not voice_client.is_connected():
                     await asyncio.sleep(0.1)
-                if voice_transcriber.is_transcribing(guild_id):
-                    await voice_transcriber.start_recording(voice_client)
                 bot.loop.create_task(play_background(voice_client))
 
             if after.channel is None and voice_client:
                 print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] {member.name} left from {voice_client.channel.name}")
-                await voice_transcriber.stop_recording(guild_id)
+                await voice_transcriber.stop_recording(voice_client, guild_id)
 
         # user state changes
             if voice_client and voice_client.channel is not None:

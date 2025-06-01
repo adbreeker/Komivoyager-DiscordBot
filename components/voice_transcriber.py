@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 import gc
 from pathlib import Path
+import asyncio
 
 
 whisper_model = None
@@ -24,7 +25,7 @@ current_voice_clients = {}  # guild_id: voice_client
 
 transcript_files = {}  # guild_id: (file_path, start_datetime)
 
-def load_whisper_model(model_size="turbo", device="cuda", compute_type="float32"):
+async def load_whisper_model(model_size="turbo", device="cuda", compute_type="float32"):
     """Load the Whisper model with specified parameters"""
     global whisper_model
     try:
@@ -41,7 +42,7 @@ def load_whisper_model(model_size="turbo", device="cuda", compute_type="float32"
         whisper_model = None
         return False
     
-def unload_whisper_model():
+async def unload_whisper_model():
     """Unload the Whisper model and clear CUDA cache"""
     global whisper_model
     try:
@@ -52,7 +53,9 @@ def unload_whisper_model():
             
         if whisper_model is not None:
             print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Unloading Whisper model")
+
             del whisper_model
+            gc.collect()
             
             # Clear CUDA cache if available
             try:
@@ -62,8 +65,6 @@ def unload_whisper_model():
                     print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] CUDA cache cleared")
             except Exception as e:
                 print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] CUDA cache clear failed: {e}")
-            
-            gc.collect()
 
             whisper_model = None
             
@@ -242,27 +243,25 @@ def is_any_transcribing():
     """Check if any guild is currently transcribing"""
     return any(transcribing_enabled.values())
 
-def set_transcribing(guild_id, value : bool):
+async def set_transcribing(guild_id, value : bool):
     transcribing_enabled[guild_id] = value
     if value:
-        load_whisper_model()
+        await load_whisper_model()
     else:
-        unload_whisper_model()
-        close_transcript_file(guild_id)
+        await unload_whisper_model()
 
-async def start_recording(vc):
-    guild_id = vc.guild.id
+async def start_recording(vc, guild_id):
     current_voice_clients[guild_id] = vc
-    vc.stop_listening() 
+    vc.stop_listening()
     get_transcript_file(guild_id)
+    while not vc.is_connected():
+        await asyncio.sleep(0.1)
     vc.listen(WhisperSink())
         
 
-async def stop_recording(guild_id):
-    vc = current_voice_clients.get(guild_id)
-    if vc:
-        vc.stop_listening()
-        current_voice_clients.pop(guild_id, None)
+async def stop_recording(vc, guild_id):
+    vc.stop_listening()
+    current_voice_clients.pop(guild_id, None)
     close_transcript_file(guild_id)
 
 def get_transcripts(guild_id):

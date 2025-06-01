@@ -92,7 +92,7 @@ async def play_background(voice_client):
                     asyncio.run_coroutine_threadsafe(play_next(0), loop)
                 voice_client.play(source, after=after_callback)
         else:
-            print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Voice client is not connected in {voice_client.channel.name}")
+            print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Voice client is not connected in {voice_client.channel.name}, stopping background music.")
             return
 
     await play_next(0)
