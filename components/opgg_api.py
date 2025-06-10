@@ -80,112 +80,121 @@ class ChampionAnalyzer:
         return {
             'champion': self.champion,
             'position': self.position,
-            'champion_id': summary['0'],
-            'games_played': avg_stats['0'],
-            'win_rate': avg_stats['1'],
-            'pick_rate': avg_stats['2'],
-            'ban_rate': avg_stats['3'],
-            'kda': avg_stats['4'],
-            'tier': avg_stats['5'],
-            'rank': avg_stats['6']
+            'champion_id': summary.get('0', 'Unknown'),
+            'games_played': avg_stats.get('0', 0) or 0,
+            'win_rate': avg_stats.get('1', 0) or 0,
+            'pick_rate': avg_stats.get('2', 0) or 0,
+            'ban_rate': avg_stats.get('3', 0) or 0,
+            'kda': avg_stats.get('4', 0) or 0,
+            'tier': avg_stats.get('5', 'Unknown') or 'Unknown',
+            'rank': avg_stats.get('6', 0) or 0
         }
 
     def get_position_stats(self) -> List[Dict]:
         """Get position-specific statistics"""
         positions = []
-        for pos in self.champion_data['summary']['positions']:
-            pos_stats = pos['stats']
+        for pos in self.champion_data['summary'].get('positions', []):
+            pos_stats = pos.get('stats', {})
+            tier_data = pos_stats.get('tier_data', [None, None])
             positions.append({
-                'lane': pos['0'],
-                'games': pos_stats['0'],
-                'win_rate': pos_stats['1'],
-                'pick_rate': pos_stats['2'],
-                'role_rate': pos_stats['3'],
-                'ban_rate': pos_stats['4'],
-                'kda': pos_stats['5'],
-                'tier': pos_stats['tier_data'][0],
-                'rank': pos_stats['tier_data'][1]
+                'lane': pos.get('0', 'Unknown'),
+                'games': pos_stats.get('0', 0) or 0,
+                'win_rate': pos_stats.get('1', 0) or 0,
+                'pick_rate': pos_stats.get('2', 0) or 0,
+                'role_rate': pos_stats.get('3', 0) or 0,
+                'ban_rate': pos_stats.get('4', 0) or 0,
+                'kda': pos_stats.get('5', 0) or 0,
+                'tier': tier_data[0] if len(tier_data) > 0 and tier_data[0] else 'Unknown',
+                'rank': tier_data[1] if len(tier_data) > 1 and tier_data[1] else 0
             })
         return positions
+    
+    def get_game_length_performance(self) -> List[Dict]:
+        """Get performance by game length"""
+        performance = []
+        for game_length in self.champion_data.get('game_lengths', []):
+            if not game_length or len(game_length) < 4:
+                continue
+            try:
+                length_range = f"{game_length[0]}-{game_length[0]+5}" if game_length[0] and game_length[0] > 0 else "0-25"
+                performance.append({
+                    'game_length': length_range,
+                    'win_rate': game_length[1] or 0,
+                    'rank': game_length[3] or 0
+                })
+            except (IndexError, TypeError):
+                continue
+        return performance
+
+    def get_trends(self) -> Dict:
+        """Get performance trends"""
+        trends = self.champion_data.get('trends', {})
+        win_history = []
+        
+        for patch_data in trends.get('win', [])[:5]:
+            if not patch_data or len(patch_data) < 4:
+                continue
+            try:
+                patch, wr, rank, date = patch_data
+                win_history.append({
+                    'patch': patch or 'Unknown',
+                    'win_rate': wr or 0,
+                    'rank': rank or 0,
+                    'date': date or 'Unknown'
+                })
+            except (ValueError, TypeError):
+                continue
+        
+        return {
+            'overall_rank': trends.get('0', 0) or 0,
+            'position_rank': trends.get('1', 0) or 0,
+            'win_history': win_history
+        }
 
     def get_summoner_spells(self) -> List[Dict]:
         """Get recommended summoner spells"""
         spells = []
-        for spell_combo in self.champion_data['summoner_spells'][:5]:
-            spell_names = [self.spell_lookup[spell_id]['name'] for spell_id in spell_combo['ids']]
-            spells.append({
-                'spells': spell_names,
-                'wins': spell_combo['0'],
-                'games': spell_combo['1'],
-                'pick_rate': spell_combo['2']
-            })
+        for spell_combo in self.champion_data.get('summoner_spells', [])[:5]:
+            if not spell_combo or 'ids' not in spell_combo:
+                continue
+            try:
+                spell_names = [self.spell_lookup.get(spell_id, {}).get('name', 'Unknown') for spell_id in spell_combo.get('ids', [])]
+                wins = spell_combo.get('0', 0) or 0
+                games = spell_combo.get('1', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                spells.append({
+                    'spells': spell_names,
+                    'wins': wins,
+                    'games': games,
+                    'pick_rate': spell_combo.get('2', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError):
+                continue
         return spells
-
-    def get_core_items(self) -> List[Dict]:
-        """Get core item builds"""
-        items = []
-        for item_combo in self.champion_data['core_items'][:5]:
-            item_names = [self.item_lookup[item_id]['name'] for item_id in item_combo['ids']]
-            items.append({
-                'items': item_names,
-                'games': item_combo['0'],
-                'wins': item_combo['1'],
-                'pick_rate': item_combo['2']
-            })
-        return items
-
-    def get_boots(self) -> List[Dict]:
-        """Get recommended boots"""
-        boots = []
-        for boot in self.champion_data['boots'][:3]:
-            boot_name = self.item_lookup[boot['ids'][0]]['name']
-            boots.append({
-                'boot': boot_name,
-                'games': boot['0'],
-                'wins': boot['1'],
-                'pick_rate': boot['2']
-            })
-        return boots
-
-    def get_starter_items(self) -> List[Dict]:
-        """Get starter item builds"""
-        starters = []
-        for starter in self.champion_data['starter_items'][:3]:
-            starter_names = [self.item_lookup[item_id]['name'] for item_id in starter['ids']]
-            starters.append({
-                'items': starter_names,
-                'games': starter['0'],
-                'wins': starter['1'],
-                'pick_rate': starter['2']
-            })
-        return starters
-
-    def get_final_items(self) -> List[Dict]:
-        """Get popular final items"""
-        items = []
-        for item in self.champion_data['last_items'][:5]:
-            item_name = self.item_lookup[item['ids'][0]]['name']
-            items.append({
-                'item': item_name,
-                'games': item['0'],
-                'wins': item['1'],
-                'pick_rate': item['2']
-            })
-        return items
-
+    
     def get_rune_pages(self) -> List[Dict]:
         """Get recommended rune pages"""
         runes = []
-        for rune_page in self.champion_data['rune_pages'][:3]:
-            primary_page = self.rune_page_lookup[rune_page['1']]['name']
-            secondary_page = self.rune_page_lookup[rune_page['2']]['name']
-            runes.append({
-                'primary': primary_page,
-                'secondary': secondary_page,
-                'games': rune_page['3'],
-                'wins': rune_page['4'],
-                'pick_rate': rune_page['5']
-            })
+        for rune_page in self.champion_data.get('rune_pages', [])[:3]:
+            if not rune_page:
+                continue
+            try:
+                wins = rune_page.get('4', 0) or 0
+                games = rune_page.get('3', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                primary_page = self.rune_page_lookup.get(rune_page.get('1'), {}).get('name', 'Unknown')
+                secondary_page = self.rune_page_lookup.get(rune_page.get('2'), {}).get('name', 'Unknown')
+                runes.append({
+                    'primary': primary_page,
+                    'secondary': secondary_page,
+                    'games': games,
+                    'wins': wins,
+                    'pick_rate': rune_page.get('5', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError):
+                continue
         return runes
 
     def get_runes(self) -> List[Dict]:
@@ -199,14 +208,19 @@ class ChampionAnalyzer:
             primary_runes = [self.rune_lookup[rune_id]['name'] for rune_id in rune['primary_rune_ids']]
             secondary_runes = [self.rune_lookup[rune_id]['name'] for rune_id in rune['secondary_rune_ids']]
             
+            wins = rune['4']
+            games = rune['3']
+            win_rate = wins / games if games > 0 else 0
+            
             runes.append({
                 'primary_page': primary_page,
                 'secondary_page': secondary_page,
                 'primary_runes': primary_runes,
                 'secondary_runes': secondary_runes,
-                'games': rune['3'],
-                'wins': rune['4'],
-                'pick_rate': rune['5']
+                'games': games,
+                'wins': wins,
+                'pick_rate': rune['5'],
+                'win_rate': win_rate
             })
         return runes
 
@@ -214,100 +228,182 @@ class ChampionAnalyzer:
         """Get skill masteries (priority order)"""
         masteries = []
         for mastery in self.champion_data['skill_masteries'][:3]:
+            wins = mastery['1']
+            games = mastery['0']
+            win_rate = wins / games if games > 0 else 0
             masteries.append({
                 'skill_priority': mastery['ids'],  # e.g., ['Q', 'E', 'W']
-                'games': mastery['0'],
-                'wins': mastery['1'],
-                'pick_rate': mastery['2']
+                'games': games,
+                'wins': wins,
+                'pick_rate': mastery['2'],
+                'win_rate': win_rate
             })
         return masteries
     
     def get_skill_orders(self) -> List[Dict]:
         """Get skill leveling orders"""
         skills = []
-        for skill_order in self.champion_data['skills'][:3]:
-            skills.append({
-                'order': skill_order['order'],
-                'games': skill_order['0'],
-                'wins': skill_order['1'],
-                'pick_rate': skill_order['2']
-            })
+        for skill_order in self.champion_data.get('skills', [])[:3]:
+            if not skill_order or 'order' not in skill_order:
+                continue
+            try:
+                wins = skill_order.get('1', 0) or 0
+                games = skill_order.get('0', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                skills.append({
+                    'order': skill_order.get('order', []),
+                    'games': games,
+                    'wins': wins,
+                    'pick_rate': skill_order.get('2', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError):
+                continue
         return skills
+
+    def get_core_items(self) -> List[Dict]:
+        """Get core item builds"""
+        items = []
+        for item_combo in self.champion_data.get('core_items', [])[:5]:
+            if not item_combo or 'ids' not in item_combo:
+                continue
+            try:
+                item_names = [self.item_lookup.get(item_id, {}).get('name', 'Unknown') for item_id in item_combo.get('ids', [])]
+                wins = item_combo.get('1', 0) or 0
+                games = item_combo.get('0', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                items.append({
+                    'items': item_names,
+                    'games': games,
+                    'wins': wins,
+                    'pick_rate': item_combo.get('2', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError):
+                continue
+        return items
+
+    def get_boots(self) -> List[Dict]:
+        """Get recommended boots"""
+        boots = []
+        for boot in self.champion_data.get('boots', [])[:3]:
+            if not boot or 'ids' not in boot or not boot['ids']:
+                continue
+            try:
+                boot_name = self.item_lookup.get(boot['ids'][0], {}).get('name', 'Unknown')
+                wins = boot.get('1', 0) or 0
+                games = boot.get('0', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                boots.append({
+                    'boot': boot_name,
+                    'games': games,
+                    'wins': wins,
+                    'pick_rate': boot.get('2', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError, IndexError):
+                continue
+        return boots
+
+    def get_starter_items(self) -> List[Dict]:
+        """Get starter item builds"""
+        starters = []
+        for starter in self.champion_data.get('starter_items', [])[:3]:
+            if not starter or 'ids' not in starter:
+                continue
+            try:
+                starter_names = [self.item_lookup.get(item_id, {}).get('name', 'Unknown') for item_id in starter.get('ids', [])]
+                wins = starter.get('1', 0) or 0
+                games = starter.get('0', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                starters.append({
+                    'items': starter_names,
+                    'games': games,
+                    'wins': wins,
+                    'pick_rate': starter.get('2', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError):
+                continue
+        return starters
+
+    def get_final_items(self) -> List[Dict]:
+        """Get popular final items"""
+        items = []
+        for item in self.champion_data.get('last_items', [])[:5]:
+            if not item or 'ids' not in item or not item['ids']:
+                continue
+            try:
+                item_name = self.item_lookup.get(item['ids'][0], {}).get('name', 'Unknown')
+                wins = item.get('1', 0) or 0
+                games = item.get('0', 0) or 0
+                win_rate = wins / games if games > 0 else 0
+                items.append({
+                    'item': item_name,
+                    'games': games,
+                    'wins': wins,
+                    'pick_rate': item.get('2', 0) or 0,
+                    'win_rate': win_rate
+                })
+            except (KeyError, TypeError, IndexError):
+                continue
+        return items
 
     def get_weak_counters(self) -> List[Dict]:
         """Get champions that counter this champion"""
         counters = []
-        for counter in self.champion_data['weak_counters']:
-            champion_id, plays, wins, win_rate = counter
-            champion_name = self.champion_lookup.get(champion_id, f"Unknown ({champion_id})")
-            # Extract just the name from the champion object
-            if isinstance(champion_name, dict) and 'name' in champion_name:
-                champion_name = champion_name['name']
-            
-            counters.append({
-                'champion': champion_name,
-                'games_played': plays,
-                'wins': wins,
-                'losses': plays - wins,
-                'win_rate': win_rate
-            })
+        for counter in self.champion_data.get('weak_counters', []):
+            if not counter or len(counter) < 4:
+                continue
+            try:
+                champion_id, plays, wins, win_rate = counter
+                if plays is None or wins is None or win_rate is None:
+                    continue
+                    
+                champion_name = self.champion_lookup.get(champion_id, f"Unknown ({champion_id})")
+                if isinstance(champion_name, dict) and 'name' in champion_name:
+                    champion_name = champion_name['name']
+                
+                counters.append({
+                    'champion': champion_name,
+                    'games_played': plays,
+                    'wins': wins,
+                    'losses': plays - wins,
+                    'win_rate': win_rate
+                })
+            except (ValueError, TypeError):
+                continue
         
-        # Sort by win rate (ascending - worst matchups first)
         counters.sort(key=lambda x: x['win_rate'])
         return counters
 
     def get_strong_counters(self) -> List[Dict]:
         """Get champions this champion counters"""
         counters = []
-        for counter in self.champion_data['strong_counters']:
-            champion_id, plays, wins, win_rate = counter
-            champion_name = self.champion_lookup.get(champion_id, f"Unknown ({champion_id})")
-            # Extract just the name from the champion object
-            if isinstance(champion_name, dict) and 'name' in champion_name:
-                champion_name = champion_name['name']
-                
-            counters.append({
-                'champion': champion_name,
-                'games_played': plays,
-                'wins': wins,
-                'losses': plays - wins,
-                'win_rate': win_rate
-            })
+        for counter in self.champion_data.get('strong_counters', []):
+            if not counter or len(counter) < 4:
+                continue
+            try:
+                champion_id, plays, wins, win_rate = counter
+                if plays is None or wins is None or win_rate is None:
+                    continue
+                    
+                champion_name = self.champion_lookup.get(champion_id, f"Unknown ({champion_id})")
+                if isinstance(champion_name, dict) and 'name' in champion_name:
+                    champion_name = champion_name['name']
+                    
+                counters.append({
+                    'champion': champion_name,
+                    'games_played': plays,
+                    'wins': wins,
+                    'losses': plays - wins,
+                    'win_rate': win_rate
+                })
+            except (ValueError, TypeError):
+                continue
         
-        # Sort by win rate (descending - best matchups first)
         counters.sort(key=lambda x: x['win_rate'], reverse=True)
         return counters
-
-    def get_game_length_performance(self) -> List[Dict]:
-        """Get performance by game length"""
-        performance = []
-        for game_length in self.champion_data['game_lengths']:
-            length_range = f"{game_length[0]}-{game_length[0]+5}" if game_length[0] > 0 else "0-25"
-            performance.append({
-                'game_length': length_range,
-                'win_rate': game_length[1],
-                'rank': game_length[3]
-            })
-        return performance
-
-    def get_trends(self) -> Dict:
-        """Get performance trends"""
-        trends = self.champion_data['trends']
-        win_history = []
-        for patch_data in trends['win'][:5]:
-            patch, wr, rank, date = patch_data
-            win_history.append({
-                'patch': patch,
-                'win_rate': wr,
-                'rank': rank,
-                'date': date
-            })
-        
-        return {
-            'overall_rank': trends['0'],
-            'position_rank': trends['1'],
-            'win_history': win_history
-        }
 
 def print_basic_stats(stats: Dict):
     """Print basic statistics"""
@@ -507,5 +603,5 @@ async def analyze_champion(champion: str, lane: str = "mid"):
         return analyzer
 
 if __name__ == "__main__":
-    # Analyze Zed in mid lane
+    # test api
     asyncio.run(analyze_champion("zed", "mid"))

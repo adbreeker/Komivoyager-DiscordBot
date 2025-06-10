@@ -6,6 +6,7 @@ import components.youtube_player as yt_player
 import components.audio_manager as audio_mgr
 import components.utilis as utils
 from datetime import datetime
+import components.opgg_api as opgg_api
 
 def setup_commands(bot):
 #help command ----------------------------------------------------------------------------------------------------- help command
@@ -516,3 +517,280 @@ def setup_commands(bot):
         except Exception as e:
             print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Unexpected error during message deletion: {str(e)}")
             await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+#lolchampion command ----------------------------------------------------------------------------------------------------- lolchampion command
+    @bot.tree.command(name="kv_lolchampion", description="Get full champion analysis from OP.GG")
+    @app_commands.describe(champion="Champion name", lane="Lane (top/jungle/mid/adc/support)")
+    async def lolchampion(interaction: discord.Interaction, champion: str, lane: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_lolchampion' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with champion: '{champion}' lane: '{lane}'")
+        
+        # Parse and validate inputs
+        champion_formatted = champion.upper().replace(' ', '_')
+        lane_formatted = lane.upper()
+        
+        valid_lanes = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']
+        if lane_formatted not in valid_lanes:
+            await interaction.response.send_message(f"❌ Invalid lane! Use: {', '.join(valid_lanes).lower()}", ephemeral=True, delete_after=10)
+            return
+        
+        await interaction.response.defer()
+        
+        try:
+            async with opgg_api.OpGGAPI() as api:
+                data = await api.get_champion_data(champion_formatted, lane_formatted)
+                
+                if 'error' in data:
+                    await interaction.followup.send(f"❌ Error fetching data: {data['error']}")
+                    return
+                
+                if 'data' not in data or 'data' not in data['data']:
+                    await interaction.followup.send(f"❌ No data found for {champion} in {lane} lane")
+                    return
+                
+                analyzer = opgg_api.ChampionAnalyzer(data)
+                
+                # Get all data
+                basic_stats = analyzer.get_basic_stats()
+                position_stats = analyzer.get_position_stats()
+                game_performance = analyzer.get_game_length_performance()
+                trends = analyzer.get_trends()
+                summoner_spells = analyzer.get_summoner_spells()
+                detailed_runes = analyzer.get_runes()
+                skill_orders = analyzer.get_skill_orders()
+                skill_masteries = analyzer.get_skill_masteries()
+                starter_items = analyzer.get_starter_items()
+                boots = analyzer.get_boots()
+                core_items = analyzer.get_core_items()
+                final_items = analyzer.get_final_items()
+                weak_counters = analyzer.get_weak_counters()
+                strong_counters = analyzer.get_strong_counters()
+                
+                # Create main embed
+                embed = discord.Embed(
+                    title=f"🏆 {basic_stats['champion']} {basic_stats['position']} Analysis",
+                    color=0x00ff00
+                )
+                
+                # 1. Header Stats
+                embed.add_field(
+                    name="📊 **STATISTICS**",
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False
+                )
+                
+                # 2 & 3. Core stats + Position performance (first column)
+                stats_combined = (
+                    f"🎯 **Win Rate:** {basic_stats['win_rate']*100:.1f}%\n"
+                    f"📈 **Pick Rate:** {basic_stats['pick_rate']*100:.1f}%\n"
+                    f"🚫 **Ban Rate:** {basic_stats['ban_rate']*100:.1f}%\n"
+                    f"⚔️ **Average KDA:** {basic_stats['kda']:.2f}\n"
+                    f"🏅 **Tier:** {basic_stats['tier']} (Rank #{basic_stats['rank']})\n"
+                    f"🎮 **Games Played:** {basic_stats['games_played']:,}"
+                )
+                
+                if position_stats:
+                    stats_combined += "\n\n**Position Performance:**\n"
+                    for pos in position_stats:
+                        stats_combined += f"`{pos['role_rate']*100:.1f}%` **{pos['lane']}:** {pos['win_rate']*100:.1f}% WR\n"
+
+                embed.add_field(name="📊 **Overall Champion Statistics**", value=stats_combined.strip(), inline=True)
+
+                # 4 & 5. Game length + Trends (second column)
+                analytics_text = ""
+                if game_performance:
+                    for perf in game_performance[:5]:
+                        analytics_text += f"`{perf['game_length']}min:` {perf['win_rate']*100:.1f}% WR\n"
+                
+                
+                if trends and trends['win_history']:
+                    if analytics_text:
+                        analytics_text += "\n"
+                    analytics_text += f"**Recent Trends:**\n"
+                    analytics_text += f"Overall: #{trends['overall_rank']} • Position: #{trends['position_rank']}\n"
+                    for patch in trends['win_history'][:4]:
+                        analytics_text += f"`{patch['patch']}:` {patch['win_rate']*100:.1f}% WR\n"
+                
+                if analytics_text:
+                    embed.add_field(name="**Game Length Performance:**", value=analytics_text.strip(), inline=True)
+                
+
+                embed.add_field(name="\u200b", value="\u200b", inline=False)
+                embed.add_field(
+                    name="🛠️ **BUILD GUIDE**",
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False
+                )
+                
+                # 6. Summoner spells + Runes (keep as they were)
+                if summoner_spells:
+                    spells_text = ""
+                    for i, spell in enumerate(summoner_spells[:3], 1):
+                        spells_text += f"`{i}.` ({spell['pick_rate']*100:.0f}%) {' + '.join(spell['spells'])} **{spell['win_rate']*100:.1f}% WR**\n"
+                    embed.add_field(name="✨ Summoner Spells", value=spells_text.strip(), inline=False)
+                    embed.add_field(name="\u200b", value="", inline=False)
+
+                if detailed_runes:
+                    runes_text = ""
+                    for i, rune in enumerate(detailed_runes[:3], 1):
+                        runes_text += f"`{i}.` ({rune['pick_rate']*100:.0f}%) **{rune['primary_page']} + {rune['secondary_page']}** **{rune['win_rate']*100:.1f}% WR**\n"
+                        runes_text += f"Primary: {' → '.join(rune['primary_runes'])}\n"
+                        runes_text += f"Secondary: {' + '.join(rune['secondary_runes'])}\n"
+                    embed.add_field(name="🔮 Detailed Runes", value=runes_text.strip(), inline=False)
+                    embed.add_field(name="\u200b", value="", inline=False)
+                
+                # 7. Skills (keep as they were)
+                skills_combined = ""
+                if skill_masteries:
+                    skills_combined += "**Skill Priority:**\n"
+                    for i, mastery in enumerate(skill_masteries[:2], 1):
+                        skills_combined += f"`{i}.` ({mastery['pick_rate']*100:.0f}%) {' > '.join(mastery['skill_priority'])} **{mastery['win_rate']*100:.1f}% WR**\n"
+
+                if skill_orders:
+                    skills_combined += "**Skill Order:**\n"
+                    for i, skill in enumerate(skill_orders[:3], 1):
+                        skills_combined += f"`{i}.` ({skill['pick_rate']*100:.0f}%) {' → '.join(skill['order'])} **{skill['win_rate']*100:.1f}% WR**\n"
+                
+                if skills_combined:
+                    embed.add_field(name="📚 Skills", value=skills_combined.strip(), inline=False)
+                
+                
+                embed.add_field(name="\u200b", value="\u200b", inline=False)
+                embed.add_field(
+                    name="🛒 **ITEMIZATION**",
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False
+                )
+                
+                # Starting items (full width)
+                if starter_items:
+                    items_text = ""
+                    for i, starter in enumerate(starter_items[:3], 1):
+                        items = ' + '.join(starter['items'][:2])
+                        items_text += f"`{i}.` ({starter['pick_rate']*100:.0f}%) {items} **{starter['win_rate']*100:.1f}% WR**\n"
+                    embed.add_field(name="👶 Starting Items", value=items_text.strip(), inline=False)
+                
+                # Boots (full width)
+                if boots:
+                    boots_text = ""
+                    for i, boot in enumerate(boots[:3], 1):
+                        boots_text += f"`{i}.` ({boot['pick_rate']*100:.0f}%) {boot['boot']} **{boot['win_rate']*100:.1f}% WR**\n"
+                    embed.add_field(name="👟 Boots", value=boots_text.strip(), inline=False)
+                
+                # Core items (full width)
+                if core_items:
+                    items_text = ""
+                    for i, item in enumerate(core_items[:4], 1):
+                        items_list = ' + '.join(item['items'][:3])
+                        items_text += f"`{i}.` ({item['pick_rate']*100:.0f}%) {items_list} **{item['win_rate']*100:.1f}% WR**\n"
+                    embed.add_field(name="⚔️ Core Items", value=items_text.strip(), inline=False)
+                
+                # Late items (full width)
+                if final_items:
+                    final_text = ""
+                    for i, item in enumerate(final_items[:4], 1):
+                        final_text += f"`{i}.` ({item['pick_rate']*100:.0f}%) {item['item']} **{item['win_rate']*100:.1f}% WR**\n"
+                    embed.add_field(name="⏳ Late Game Items", value=final_text.strip(), inline=False)
+
+                # 11. Matchups header
+                embed.add_field(name="\u200b", value="\u200b", inline=False)
+                embed.add_field(
+                    name="⚔️ **MATCHUPS**",
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False
+                )
+                
+                # 12. Counters in two columns
+                if weak_counters:
+                    counter_text = ""
+                    for i, counter in enumerate(weak_counters[:5], 1):
+                        counter_text += f"`{i}.` **{counter['champion']}** - {counter['win_rate']*100:.1f}% WR\n"
+                    embed.add_field(name=f"❌ Hard Matchups", value=counter_text.strip(), inline=True)
+                
+                if strong_counters:
+                    counter_text = ""
+                    for i, counter in enumerate(strong_counters[:5], 1):
+                        counter_text += f"`{i}.` **{counter['champion']}** - {counter['win_rate']*100:.1f}% WR\n"
+                    embed.add_field(name=f"✅ Easy Matchups", value=counter_text.strip(), inline=True)
+                
+                await interaction.followup.send(embed=embed)
+                
+        except Exception as e:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error in lolchampion command: {str(e)}")
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
+
+#lolmatchup command ----------------------------------------------------------------------------------------------------- lolmatchup command  
+    @bot.tree.command(name="kv_lolmatchup", description="Get champion matchup information (counters)")
+    @app_commands.describe(champion="Champion name", lane="Lane (top/jungle/mid/adc/support)")
+    async def lolmatchup(interaction: discord.Interaction, champion: str, lane: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_lolmatchup' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with champion: '{champion}' lane: '{lane}'")
+        
+        # Parse and validate inputs
+        champion_formatted = champion.upper().replace(' ', '_')
+        lane_formatted = lane.upper()
+        
+        valid_lanes = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']
+        if lane_formatted not in valid_lanes:
+            await interaction.response.send_message(f"❌ Invalid lane! Use: {', '.join(valid_lanes).lower()}", ephemeral=True, delete_after=10)
+            return
+        
+        await interaction.response.defer()
+        
+        try:
+            async with opgg_api.OpGGAPI() as api:
+                data = await api.get_champion_data(champion_formatted, lane_formatted)
+                
+                if 'error' in data:
+                    await interaction.followup.send(f"❌ Error fetching data: {data['error']}")
+                    return
+                
+                if 'data' not in data or 'data' not in data['data']:
+                    await interaction.followup.send(f"❌ No data found for {champion} in {lane} lane")
+                    return
+                
+                analyzer = opgg_api.ChampionAnalyzer(data)
+                basic_stats = analyzer.get_basic_stats()
+                
+                # Get all counters
+                weak_counters = analyzer.get_weak_counters()
+                strong_counters = analyzer.get_strong_counters()
+                
+                # Create matchup embed with two columns
+                embed = discord.Embed(
+                    title=f"⚔️ {basic_stats['champion']} {basic_stats['position']} Matchups",
+                    color=0x9932cc
+                )
+                
+                # Special note for Taric
+                if champion_formatted == 'TARIC':
+                    embed.description = f"Why bother? {champion_formatted} is good in every situation 📈"
+                
+                if weak_counters:
+                    counter_text = ""
+                    for i, counter in enumerate(weak_counters, 1):
+                        counter_text += f"{i:2d}. **{counter['champion']}** - {counter['win_rate']*100:.1f}% WR ({counter['games_played']:,})\n"
+                        # Add extra line space after top 5
+                        if i == 5 and len(weak_counters) > 5:
+                            counter_text += "\n"
+                    embed.add_field(name=f"❌ {basic_stats['champion']} is bad against", value=counter_text, inline=True)
+                
+                # Add empty field for spacing between columns
+                if weak_counters and strong_counters:
+                    embed.add_field(name="\u200b", value="\u200b", inline=True)
+                
+                if strong_counters:
+                    counter_text = ""
+                    for i, counter in enumerate(strong_counters, 1):
+                        counter_text += f"{i:2d}. **{counter['champion']}** - {counter['win_rate']*100:.1f}% WR ({counter['games_played']:,})\n"
+                        # Add extra line space after top 5
+                        if i == 5 and len(strong_counters) > 5:
+                            counter_text += "\n"
+                    embed.add_field(name=f"✅ {basic_stats['champion']} is good against", value=counter_text, inline=True)
+                
+                if not weak_counters and not strong_counters:
+                    embed.description = f"❌ No counter data found for {champion} in {lane} lane"
+                
+                await interaction.followup.send(embed=embed)
+                
+        except Exception as e:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error in lolmatchup command: {str(e)}")
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
