@@ -16,16 +16,15 @@ class OpGGAPI:
         if self.session:
             await self.session.close()
     
-    async def get_champion_counters(self, champion_name: str, lane: str = "mid") -> Dict:
-        # JSON-RPC 2.0 format payload with corrected parameter names
+    async def get_champion_data(self, champion_name: str, lane: str = "mid") -> Dict:
         payload = {
             "jsonrpc": "2.0",
             "method": "tools/call",
             "params": {
                 "name": "lol-champion-analysis",
                 "arguments": {
-                    "champion": "ZED",  # Try title case instead of capitalize
-                    "position": "MID"  # Changed from champion_position to position
+                    "champion": champion_name,
+                    "position": lane
                 }
             },
             "id": 1
@@ -41,148 +40,317 @@ class OpGGAPI:
                 if response.status == 200:
                     data = await response.json()
                     
-                    # Extract and parse the inner JSON from the text field
                     if 'result' in data and 'content' in data['result']:
                         content = data['result']['content']
                         if content and len(content) > 0 and 'text' in content[0]:
-                            # Parse the JSON string inside the text field
                             inner_json_str = content[0]['text']
                             parsed_data = json.loads(inner_json_str)
                             
-                            # Save the parsed JSON data to scrapped.json
-                            with open('scrapped.json', 'w', encoding='utf-8') as f:
-                                json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+                            # Save to file
+                            #with open('scrapped.json', 'w', encoding='utf-8') as f:
+                            #   json.dump(parsed_data, f, indent=2, ensure_ascii=False)
                             
-                            print(f"Received data for {champion_name} in {lane} lane")
                             return parsed_data
-                    
-                    # Fallback: save raw data if structure is different
-                    with open('scrapped.json', 'w', encoding='utf-8') as f:
-                        json.dump(data, f, indent=2, ensure_ascii=False)
                     
                     return data
         
-        except aiohttp.ClientError as e:
-            return {"error": f"Network error: {str(e)}"}
-        except json.JSONDecodeError as e:
-            return {"error": f"Invalid JSON response: {str(e)}"}
-    
-    
+        except (aiohttp.ClientError, json.JSONDecodeError) as e:
+            return {"error": f"API error: {str(e)}"}
 
-# MCP Server integration
-class MCPServer:
-    def __init__(self):
-        self.api = OpGGAPI()
-    
-    async def handle_get_counters(self, champion: str, lane: str = "mid") -> Dict:
-        """MCP tool for getting champion counters"""
-        async with self.api as api_client:
-            result = await api_client.get_champion_counters(champion, lane)
-            return result
-
-# Usage example
-async def get_zed_counters():
-    """Get counterpicks for Zed"""
-    mcp_server = MCPServer()
-    
-    # Get Zed counters in mid lane
-    print("Fetching Zed counters from OP.GG MCP API...")
-    counters = await mcp_server.handle_get_counters("zed", "mid")
-    
-    # Check if we got valid data and print analysis
-    if counters and 'data' in counters and 'data' in counters['data']:
-        print_weak_counters_analysis(counters)
-        print_strong_counters_analysis(counters)
-    else:
-        print("No valid counter data received")
-    
-    return counters
-
-def analyze_weak_counters(data):
-    """Extract and analyze weak counters for the champion"""
-    weak_counters = data['data']['data']['weak_counters']
-    champions_metadata = data['localized_metadata']['champions']
-    
-    # Create a lookup dictionary for champion names
-    champion_lookup = {champ['id']: champ['name'] for champ in champions_metadata}
-    
-    # Process weak counters
-    counter_info = []
-    for counter in weak_counters:
-        champion_id, plays, wins, win_rate = counter
-        champion_name = champion_lookup.get(champion_id, f"Unknown ({champion_id})")
+class ChampionAnalyzer:
+    def __init__(self, data: Dict):
+        self.data = data
+        self.champion_data = data['data']['data']
+        self.metadata = data['localized_metadata']
+        self.champion = data['champion']
+        self.position = data['position']
         
-        counter_info.append({
-            'champion': champion_name,
-            'champion_id': champion_id,
-            'games_played': plays,
-            'wins': wins,
-            'win_rate': round(win_rate * 100, 2),  # Convert to percentage
-            'losses': plays - wins
-        })
-    
-    # Sort by win rate (ascending - worst matchups first)
-    counter_info.sort(key=lambda x: x['win_rate'])
-    
-    return counter_info
+        # Create lookup dictionaries
+        self.item_lookup = {item['id']: item for item in self.metadata['items']}
+        self.spell_lookup = {spell['id']: spell for spell in self.metadata['spells']}
+        self.champion_lookup = {champ['id']: champ for champ in self.metadata['champions']}
+        self.rune_lookup = {rune['id']: rune for rune in self.metadata['runes']}
+        self.rune_page_lookup = {page['id']: page for page in self.metadata['rune_pages']}
 
-def print_weak_counters_analysis(data):
-    """Print formatted analysis of weak counters"""
-    weak_counters = analyze_weak_counters(data)
-    
-    print(f"\n=== WEAK COUNTERS FOR {data['champion']} ===")
-    print("Champions that are harder to play against (sorted by difficulty):\n")
-    
-    for i, counter in enumerate(weak_counters[:10], 1):  # Top 10 worst matchups
-        print(f"{i:2d}. {counter['champion']:<15} - {counter['win_rate']:5.1f}% WR "
-              f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
-    
-    return weak_counters
-
-def analyze_strong_counters(data):
-    """Extract and analyze strong counters for the champion (easy matchups)"""
-    strong_counters = data['data']['data']['strong_counters']
-    champions_metadata = data['localized_metadata']['champions']
-    
-    # Create a lookup dictionary for champion names
-    champion_lookup = {champ['id']: champ['name'] for champ in champions_metadata}
-    
-    # Process strong counters
-    counter_info = []
-    for counter in strong_counters:
-        champion_id, plays, wins, win_rate = counter
-        champion_name = champion_lookup.get(champion_id, f"Unknown ({champion_id})")
+    def get_basic_stats(self) -> Dict:
+        """Get basic champion statistics"""
+        summary = self.champion_data['summary']
+        avg_stats = summary['average_stats']
         
-        counter_info.append({
-            'champion': champion_name,
-            'champion_id': champion_id,
-            'games_played': plays,
-            'wins': wins,
-            'win_rate': round(win_rate * 100, 2),  # Convert to percentage
-            'losses': plays - wins
-        })
-    
-    # Sort by win rate (descending - best matchups first)
-    counter_info.sort(key=lambda x: x['win_rate'], reverse=True)
-    
-    return counter_info
+        return {
+            'champion': self.champion,
+            'position': self.position,
+            'champion_id': summary['0'],
+            'games_played': avg_stats['0'],
+            'win_rate': avg_stats['1'],
+            'pick_rate': avg_stats['2'],
+            'ban_rate': avg_stats['3'],
+            'kda': avg_stats['4'],
+            'tier': avg_stats['5'],
+            'rank': avg_stats['6']
+        }
 
-def print_strong_counters_analysis(data):
-    """Print formatted analysis of strong counters"""
-    strong_counters = analyze_strong_counters(data)
-    
-    print(f"\n=== STRONG COUNTERS FOR {data['champion']} ===")
-    print("Champions that are easier to play against (sorted by easiest):\n")
-    
-    for i, counter in enumerate(strong_counters[:10], 1):  # Top 10 best matchups
-        print(f"{i:2d}. {counter['champion']:<15} - {counter['win_rate']:5.1f}% WR "
+    def get_position_stats(self) -> List[Dict]:
+        """Get position-specific statistics"""
+        positions = []
+        for pos in self.champion_data['summary']['positions']:
+            pos_stats = pos['stats']
+            positions.append({
+                'lane': pos['0'],
+                'games': pos_stats['0'],
+                'win_rate': pos_stats['1'],
+                'pick_rate': pos_stats['2'],
+                'role_rate': pos_stats['3'],
+                'ban_rate': pos_stats['4'],
+                'kda': pos_stats['5'],
+                'tier': pos_stats['tier_data'][0],
+                'rank': pos_stats['tier_data'][1]
+            })
+        return positions
+
+    def get_summoner_spells(self) -> List[Dict]:
+        """Get recommended summoner spells"""
+        spells = []
+        for spell_combo in self.champion_data['summoner_spells'][:5]:
+            spell_names = [self.spell_lookup[spell_id]['name'] for spell_id in spell_combo['ids']]
+            spells.append({
+                'spells': spell_names,
+                'wins': spell_combo['0'],
+                'games': spell_combo['1'],
+                'pick_rate': spell_combo['2']
+            })
+        return spells
+
+    def get_core_items(self) -> List[Dict]:
+        """Get core item builds"""
+        items = []
+        for item_combo in self.champion_data['core_items'][:5]:
+            item_names = [self.item_lookup[item_id]['name'] for item_id in item_combo['ids']]
+            items.append({
+                'items': item_names,
+                'games': item_combo['0'],
+                'wins': item_combo['1'],
+                'pick_rate': item_combo['2']
+            })
+        return items
+
+    def get_boots(self) -> List[Dict]:
+        """Get recommended boots"""
+        boots = []
+        for boot in self.champion_data['boots'][:3]:
+            boot_name = self.item_lookup[boot['ids'][0]]['name']
+            boots.append({
+                'boot': boot_name,
+                'games': boot['0'],
+                'wins': boot['1'],
+                'pick_rate': boot['2']
+            })
+        return boots
+
+    def get_starter_items(self) -> List[Dict]:
+        """Get starter item builds"""
+        starters = []
+        for starter in self.champion_data['starter_items'][:3]:
+            starter_names = [self.item_lookup[item_id]['name'] for item_id in starter['ids']]
+            starters.append({
+                'items': starter_names,
+                'games': starter['0'],
+                'wins': starter['1'],
+                'pick_rate': starter['2']
+            })
+        return starters
+
+    def get_final_items(self) -> List[Dict]:
+        """Get popular final items"""
+        items = []
+        for item in self.champion_data['last_items'][:5]:
+            item_name = self.item_lookup[item['ids'][0]]['name']
+            items.append({
+                'item': item_name,
+                'games': item['0'],
+                'wins': item['1'],
+                'pick_rate': item['2']
+            })
+        return items
+
+    def get_rune_pages(self) -> List[Dict]:
+        """Get recommended rune pages"""
+        runes = []
+        for rune_page in self.champion_data['rune_pages'][:3]:
+            primary_page = self.rune_page_lookup[rune_page['1']]['name']
+            secondary_page = self.rune_page_lookup[rune_page['2']]['name']
+            runes.append({
+                'primary': primary_page,
+                'secondary': secondary_page,
+                'games': rune_page['3'],
+                'wins': rune_page['4'],
+                'pick_rate': rune_page['5']
+            })
+        return runes
+
+    def get_skill_orders(self) -> List[Dict]:
+        """Get skill leveling orders"""
+        skills = []
+        for skill_order in self.champion_data['skills'][:3]:
+            skills.append({
+                'order': skill_order['order'],
+                'games': skill_order['0'],
+                'wins': skill_order['1'],
+                'pick_rate': skill_order['2']
+            })
+        return skills
+
+    def get_weak_counters(self) -> List[Dict]:
+        """Get champions that counter this champion"""
+        counters = []
+        for counter in self.champion_data['weak_counters']:
+            champion_id, plays, wins, win_rate = counter
+            champion_name = self.champion_lookup.get(champion_id, f"Unknown ({champion_id})")
+            # Extract just the name from the champion object
+            if isinstance(champion_name, dict) and 'name' in champion_name:
+                champion_name = champion_name['name']
+            
+            counters.append({
+                'champion': champion_name,
+                'games_played': plays,
+                'wins': wins,
+                'losses': plays - wins,
+                'win_rate': win_rate
+            })
+        
+        # Sort by win rate (ascending - worst matchups first)
+        counters.sort(key=lambda x: x['win_rate'])
+        return counters
+
+    def get_strong_counters(self) -> List[Dict]:
+        """Get champions this champion counters"""
+        counters = []
+        for counter in self.champion_data['strong_counters']:
+            champion_id, plays, wins, win_rate = counter
+            champion_name = self.champion_lookup.get(champion_id, f"Unknown ({champion_id})")
+            # Extract just the name from the champion object
+            if isinstance(champion_name, dict) and 'name' in champion_name:
+                champion_name = champion_name['name']
+                
+            counters.append({
+                'champion': champion_name,
+                'games_played': plays,
+                'wins': wins,
+                'losses': plays - wins,
+                'win_rate': win_rate
+            })
+        
+        # Sort by win rate (descending - best matchups first)
+        counters.sort(key=lambda x: x['win_rate'], reverse=True)
+        return counters
+
+    def get_game_length_performance(self) -> List[Dict]:
+        """Get performance by game length"""
+        performance = []
+        for game_length in self.champion_data['game_lengths']:
+            length_range = f"{game_length[0]}-{game_length[0]+5}" if game_length[0] > 0 else "0-25"
+            performance.append({
+                'game_length': length_range,
+                'win_rate': game_length[1],
+                'rank': game_length[3]
+            })
+        return performance
+
+    def get_trends(self) -> Dict:
+        """Get performance trends"""
+        trends = self.champion_data['trends']
+        win_history = []
+        for patch_data in trends['win'][:5]:
+            patch, wr, rank, date = patch_data
+            win_history.append({
+                'patch': patch,
+                'win_rate': wr,
+                'rank': rank,
+                'date': date
+            })
+        
+        return {
+            'overall_rank': trends['0'],
+            'position_rank': trends['1'],
+            'win_history': win_history
+        }
+
+def print_basic_stats(stats: Dict):
+    """Print basic statistics"""
+    print(f"\n=== {stats['champion']} {stats['position']} BASIC STATS ===")
+    print(f"Games Played: {stats['games_played']:,}")
+    print(f"Win Rate: {stats['win_rate']*100:.2f}%")
+    print(f"Pick Rate: {stats['pick_rate']*100:.2f}%")
+    print(f"Ban Rate: {stats['ban_rate']*100:.2f}%")
+    print(f"Average KDA: {stats['kda']:.2f}")
+    print(f"Tier: {stats['tier']} | Rank: {stats['rank']}")
+
+def print_summoner_spells(spells: List[Dict]):
+    """Print summoner spells"""
+    print(f"\n=== SUMMONER SPELLS ===")
+    for i, spell in enumerate(spells, 1):
+        print(f"{i}. {' + '.join(spell['spells'])} - {spell['pick_rate']*100:.1f}% pick rate "
+              f"({spell['wins']:,}W/{spell['games']:,} games)")
+
+def print_core_items(items: List[Dict]):
+    """Print core items"""
+    print(f"\n=== CORE ITEMS ===")
+    for i, item in enumerate(items, 1):
+        print(f"{i}. {' + '.join(item['items'])} - {item['pick_rate']*100:.1f}% pick rate "
+              f"({item['wins']:,}W/{item['games']:,} games)")
+
+def print_weak_counters(counters: List[Dict]):
+    """Print weak counters"""
+    print(f"\n=== WEAK COUNTERS (Hardest Matchups) ===")
+    for i, counter in enumerate(counters[:10], 1):
+        champion_name = str(counter['champion'])  # Ensure it's a string
+        print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
               f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
+
+def print_strong_counters(counters: List[Dict]):
+    """Print strong counters"""
+    print(f"\n=== STRONG COUNTERS (Easiest Matchups) ===")
+    for i, counter in enumerate(counters[:10], 1):
+        champion_name = str(counter['champion'])  # Ensure it's a string
+        print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
+              f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
+
+async def analyze_champion(champion: str, lane: str = "mid"):
+    """Main function to analyze a champion"""
+    print(f"Fetching {champion} data from OP.GG API...")
     
-    return strong_counters
+    async with OpGGAPI() as api:
+        data = await api.get_champion_data(champion.upper(), lane.upper())
+        
+        if 'error' in data:
+            print(f"Error: {data['error']}")
+            return
+        
+        if 'data' not in data or 'data' not in data['data']:
+            print("No valid data received")
+            return
+        
+        # Create analyzer
+        analyzer = ChampionAnalyzer(data)
+        
+        # Get and print all stats
+        basic_stats = analyzer.get_basic_stats()
+        print_basic_stats(basic_stats)
+        
+        summoner_spells = analyzer.get_summoner_spells()
+        print_summoner_spells(summoner_spells)
+        
+        core_items = analyzer.get_core_items()
+        print_core_items(core_items)
+        
+        weak_counters = analyzer.get_weak_counters()
+        print_weak_counters(weak_counters)
+        
+        strong_counters = analyzer.get_strong_counters()
+        print_strong_counters(strong_counters)
+        
+        return analyzer
 
 if __name__ == "__main__":
-    # Run the example
-    asyncio.run(get_zed_counters())
-    
-    # Uncomment to test multiple champions
-    # asyncio.run(test_multiple_champions())
+    # Analyze Zed in mid lane
+    asyncio.run(analyze_champion("zed", "mid"))
