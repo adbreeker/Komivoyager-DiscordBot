@@ -26,8 +26,7 @@ class OpGGAPI:
                     "champion": champion_name,
                     "position": lane
                 }
-            },
-            "id": 1
+            }
         }
         
         headers = {
