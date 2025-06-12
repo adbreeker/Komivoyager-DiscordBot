@@ -40,13 +40,14 @@ def setup_commands(bot):
             ),
             inline=False
         )
-        
+
         # Voice Commands
         embed.add_field(
             name="🎵 Voice Commands",
             value=(
                 "`/kv_join` - Joins your current voice channel\n"
                 "`/kv_leave` - Leaves his current voice channel\n"
+                "`/kv_say <text> <pl/en>` - Make the bot speak text in voice channel\n"
             ),
             inline=False
         )
@@ -162,6 +163,31 @@ def setup_commands(bot):
             await interaction.response.send_message("Disconnected from the voice channel.", ephemeral=True, delete_after=5)
         else:
             await interaction.response.send_message("I am not connected to any voice channel.", ephemeral=True, delete_after=5)
+
+#say command ----------------------------------------------------------------------------------------------------- say command
+    @bot.tree.command(name="kv_say", description="Make the bot speak text in voice channel")
+    @app_commands.describe(text="Text to speak", language="Language (pl/en)")
+    async def say(interaction: discord.Interaction, text: str, language: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_say' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with text: '{text[:50]}{'...' if len(text) > 50 else ''}' language: '{language}'")
+        
+        # Validate language
+        if language.lower() not in ['pl', 'en']:
+            await interaction.response.send_message("❌ Invalid language! Use 'pl' for Polish or 'en' for English.", ephemeral=True, delete_after=10)
+            return
+        
+        # Check if bot is connected to voice
+        voice_client = interaction.guild.voice_client
+        if not voice_client or not voice_client.is_connected():
+            await interaction.response.send_message("❌ I'm not connected to a voice channel! Use `/kv_join` first.", ephemeral=True, delete_after=10)
+            return
+        
+        # Validate text length
+        if len(text) > 500:
+            await interaction.response.send_message("❌ Text is too long! Maximum 500 characters allowed.", ephemeral=True, delete_after=10)
+            return
+        
+        await audio_mgr.say_text(voice_client, text, language.lower())
+        await interaction.response.send_message("✓", ephemeral=True, delete_after=0.1)
 
 #transcript command ----------------------------------------------------------------------------------------------------- transcript command
     @bot.tree.command(name="kv_transcript", description="Enable or disable voice transcription.")

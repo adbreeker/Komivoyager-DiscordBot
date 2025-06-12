@@ -1,3 +1,4 @@
+import random
 import discord
 from discord import app_commands
 from discord.ext import voice_recv
@@ -34,3 +35,30 @@ def get_file_as_discord_file(file_path):
     except Exception as e:
         print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error reading transcript file '{file_path}': {e}")
         return None
+
+def get_greeting(user: discord.User) -> str:
+    """Generate a greeting message for a user."""
+    name = user.name
+
+    if user.bot:
+        return f"Hello bot {name}."
+
+    if name == 'adbreeker':
+        random_greetings = [
+            f"Hello {name}! You look amazing today!",
+            f"Greetings, master {name}!",
+            f"Welcome {name}, lovely to have you here!",
+            f"All praise the great {name}! Your presence is a gift!",
+        ]
+        return random.choice(random_greetings)
+    else:
+        random_greetings = [
+            f"Do you smell it? Uh it must be {name}, what a stink!",
+            f"Oh hell no, it's {name} again!",
+            f"Look who it is, {name}, the destroyer of fun and children's smiles!",
+            f"Hi {name}, I am afraid there is no place for you and your belly here at the same time.",
+            f"Welcome {name}, could you check if you are not somewhere else?",
+            f"Fuck... it's {name}. Another day ruined!",
+            f"They say that every newcomer is a gift... They clearly haven't met {name}."
+        ]
+        return random.choice(random_greetings)
