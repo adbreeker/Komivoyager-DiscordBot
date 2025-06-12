@@ -13,6 +13,7 @@ def setup_events(bot):
     @bot.event
     async def on_message(message):
         if message.author == bot.user:
+            await message.add_reaction('🗑️')
             return
 
         if 'potwierdzam' in message.content.lower():
@@ -20,6 +21,30 @@ def setup_events(bot):
             await message.channel.send(f'{message.author.mention}, tutaj się nie potwierdza!')
 
         await bot.process_commands(message)
+    
+    @bot.event
+    async def on_raw_reaction_add(payload):
+        if payload.user_id == bot.user.id:
+            return
+
+        # Delete bot message with trash emoji
+        if str(payload.emoji) == '🗑️':
+            try:
+                # Get the channel and message
+                channel = bot.get_channel(payload.channel_id)
+                message = await channel.fetch_message(payload.message_id)
+
+                if message.author.id == bot.user.id:
+                    user = bot.get_user(payload.user_id)
+                    await message.delete()
+                    print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Message deleted by {user.name} via reaction in {channel.name}")
+                    
+            except discord.errors.NotFound:
+                print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Message already deleted")
+            except discord.errors.Forbidden:
+                print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Cannot delete message - missing permissions")
+            except Exception as e:
+                print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error deleting message via reaction: {e}")
 
     @bot.event
     async def on_voice_state_update(member, before, after):

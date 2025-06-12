@@ -88,7 +88,8 @@ def setup_commands(bot):
             value=(
                 "• Background music starts and loops automatically\n"
                 "• Transcription supports Polish language\n"
-                "• Bot disconnects when no users are in voice channel"
+                "• Bot disconnects when no users are in voice channel\n"
+                "• React with 🗑️ to any bot message to instantly delete it"
             ),
             inline=False
         )

@@ -34,6 +34,7 @@ A comprehensive, feature-rich Discord bot with AI-powered voice transcription, L
 - **Bulk Message Deletion** - Admin-only chat clearing (1-100 messages)
 - **Welcome System** - Automatic DM greetings for new members
 - **Interactive Polls** - Quick democracy polls with emoji reactions
+- **Quick Bot Message Removal** - React with 🗑️ to any bot message to instantly delete it
 
 ### 🔧 **Technical Features**
 - **Slash Commands** - Modern Discord interactions with autocomplete
