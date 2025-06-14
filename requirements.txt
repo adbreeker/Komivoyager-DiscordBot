@@ -10,3 +10,4 @@ https://download.pytorch.org/whl/cu124/torchaudio-2.5.0%2Bcu124-cp311-cp311-win_
 imageio-ffmpeg
 mutagen
 yt-dlp
+gtts

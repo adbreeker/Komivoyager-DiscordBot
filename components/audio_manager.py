@@ -4,9 +4,8 @@ import imageio_ffmpeg
 from mutagen.mp3 import MP3
 from components.voice_transcriber import is_transcribing
 from datetime import datetime
-import pyttsx3
+from gtts import gTTS
 import io
-import wave
 
 # Global audio state management
 current_background_music = {}  # guild_id: background_music_source
@@ -119,37 +118,17 @@ async def say_text(voice_client, text, language):
         return False
     
     try:
-        # Initialize TTS engine
-        engine = pyttsx3.init()
+        # Create TTS using gTTS
+        tts = gTTS(text=text, lang=language[:2], slow=False, tld='us')  # Use first 2 chars of language code
         
-        # Configure TTS settings
-        engine.setProperty('rate', 150)  # Speed of speech
-        engine.setProperty('volume', 1.0)  # Volume level (0.0 to 1.0)
+        # Create in-memory buffer
+        mp3_buffer = io.BytesIO()
         
-        # Get available voices and set to English if available
-        voices = engine.getProperty('voices')
-
-        for voice in voices:
-            if language in voice.id.lower():
-                engine.setProperty('voice', voice.id)
-                break
-        
-        # Create in-memory buffer for TTS audio
-        audio_buffer = io.BytesIO()
-        
-        # Custom callback to capture audio data
-        def write_to_buffer(name, location, audio_data):
-            audio_buffer.write(audio_data)
-        
-        # Generate TTS audio to memory buffer
-        engine.connect('started-utterance', lambda name: audio_buffer.seek(0))
-        engine.say(text)
-        engine.runAndWait()
+        # Write TTS audio to buffer
+        tts.write_to_fp(mp3_buffer)
+        mp3_buffer.seek(0)
 
         stop_audio(voice_client)  # Stop any currently playing audio
-        
-        # Reset buffer position for reading
-        audio_buffer.seek(0)
         
         # Play the TTS audio from memory
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
@@ -157,10 +136,9 @@ async def say_text(voice_client, text, language):
         
         # Use FFmpeg with pipe input for in-memory audio
         ffmpeg_source = discord.FFmpegPCMAudio(
-            audio_buffer,
+            mp3_buffer,
             executable=ffmpeg_path,
             pipe=True,
-            before_options='-f wav',
         )
         source = discord.PCMVolumeTransformer(ffmpeg_source, volume=volume)
         current_voice_sources[guild_id] = source
@@ -168,7 +146,7 @@ async def say_text(voice_client, text, language):
         def after_callback(e):
             # Clean up
             current_voice_sources.pop(guild_id, None)
-            audio_buffer.close()
+            mp3_buffer.close()
             
             if e:
                 print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] TTS playback error: {e}")
