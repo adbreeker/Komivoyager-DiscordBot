@@ -119,7 +119,7 @@ async def say_text(voice_client, text, language):
     
     try:
         # Create TTS using gTTS
-        tts = gTTS(text=text, lang=language[:2], slow=False, tld='us')  # Use first 2 chars of language code
+        tts = gTTS(text=text, lang=language, slow=False, tld='us')  # Use first 2 chars of language code
         
         # Create in-memory buffer
         mp3_buffer = io.BytesIO()
