@@ -2,7 +2,7 @@ discord.py
 python-dotenv
 pynacl
 faster-whisper
-discord-ext-voice-recv==0.5.0a167 #or latest version from https://github.com/imayhaveborkedit/discord-ext-voice-recv if you encounter issues
+discord-ext-voice-recv==0.5.2a179 #or latest version from https://github.com/imayhaveborkedit/discord-ext-voice-recv if you encounter issues
 scipy
 numpy==1.26.4
 https://download.pytorch.org/whl/cu124/torch-2.5.0%2Bcu124-cp311-cp311-win_amd64.whl#sha256=270e004f028b2fc6886388ca01b5f22389f3a7babbd2004a1eec82aa7f669c12
