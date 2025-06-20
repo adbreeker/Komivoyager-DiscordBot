@@ -15,8 +15,8 @@ class OpGGAPI:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
-    
-    async def get_champion_data(self, champion_name: str, lane: str) -> Dict:
+
+    async def get_champion_analysis(self, champion_name: str, lane: str) -> Dict:
         payload = {
             "jsonrpc": "2.0",
             "method": "tools/call",
@@ -405,203 +405,228 @@ class ChampionAnalyzer:
         counters.sort(key=lambda x: x['win_rate'], reverse=True)
         return counters
 
-def print_basic_stats(stats: Dict):
-    """Print basic statistics"""
-    print(f"\n=== {stats['champion']} {stats['position']} BASIC STATS ===")
-    print(f"Games Played: {stats['games_played']:,}")
-    print(f"Win Rate: {stats['win_rate']*100:.2f}%")
-    print(f"Pick Rate: {stats['pick_rate']*100:.2f}%")
-    print(f"Ban Rate: {stats['ban_rate']*100:.2f}%")
-    print(f"Average KDA: {stats['kda']:.2f}")
-    print(f"Tier: {stats['tier']} | Rank: {stats['rank']}")
-
-def print_summoner_spells(spells: List[Dict]):
-    """Print summoner spells"""
-    print(f"\n=== SUMMONER SPELLS ===")
-    for i, spell in enumerate(spells, 1):
-        print(f"{i}. {' + '.join(spell['spells'])} - {spell['pick_rate']*100:.1f}% pick rate "
-              f"({spell['wins']:,}W/{spell['games']:,} games)")
-
-def print_core_items(items: List[Dict]):
-    """Print core items"""
-    print(f"\n=== CORE ITEMS ===")
-    for i, item in enumerate(items, 1):
-        print(f"{i}. {' + '.join(item['items'])} - {item['pick_rate']*100:.1f}% pick rate "
-              f"({item['wins']:,}W/{item['games']:,} games)")
-
-def print_boots(boots: List[Dict]):
-    """Print boots"""
-    print(f"\n=== BOOTS ===")
-    for i, boot in enumerate(boots, 1):
-        print(f"{i}. {boot['boot']} - {boot['pick_rate']*100:.1f}% pick rate "
-              f"({boot['wins']:,}W/{boot['games']:,} games)")
-
-def print_starter_items(starters: List[Dict]):
-    """Print starter items"""
-    print(f"\n=== STARTER ITEMS ===")
-    for i, starter in enumerate(starters, 1):
-        print(f"{i}. {' + '.join(starter['items'])} - {starter['pick_rate']*100:.1f}% pick rate "
-              f"({starter['wins']:,}W/{starter['games']:,} games)")
-
-def print_final_items(items: List[Dict]):
-    """Print final items"""
-    print(f"\n=== FINAL ITEMS ===")
-    for i, item in enumerate(items, 1):
-        print(f"{i}. {item['item']} - {item['pick_rate']*100:.1f}% pick rate "
-              f"({item['wins']:,}W/{item['games']:,} games)")
-
-def print_rune_pages(rune_pages: List[Dict]):
-    """Print rune pages"""
-    print(f"\n=== RUNE PAGES ===")
-    for i, rune in enumerate(rune_pages, 1):
-        print(f"{i}. {rune['primary']} + {rune['secondary']} - {rune['pick_rate']*100:.1f}% pick rate "
-              f"({rune['wins']:,}W/{rune['games']:,} games)")
-
-def print_runes(runes: List[Dict]):
-    """Print detailed runes"""
-    print(f"\n=== DETAILED RUNES ===")
-    for i, rune in enumerate(runes, 1):
-        print(f"\n{i}. {rune['primary_page']} + {rune['secondary_page']} - {rune['pick_rate']*100:.1f}% pick rate")
-        print(f"   Primary: {' > '.join(rune['primary_runes'])}")
-        print(f"   Secondary: {' + '.join(rune['secondary_runes'])}")
-        print(f"   ({rune['wins']:,}W/{rune['games']:,} games)")
-
-def print_skill_orders(skills: List[Dict]):
-    """Print skill orders"""
-    print(f"\n=== SKILL ORDERS ===")
-    for i, skill in enumerate(skills, 1):
-        print(f"{i}. {' > '.join(skill['order'])} - {skill['pick_rate']*100:.1f}% pick rate "
-              f"({skill['wins']:,}W/{skill['games']:,} games)")
-
-def print_skill_masteries(masteries: List[Dict]):
-    """Print skill masteries"""
-    print(f"\n=== SKILL MASTERIES ===")
-    for i, mastery in enumerate(masteries, 1):
-        print(f"{i}. {' > '.join(mastery['skill_priority'])} priority - {mastery['pick_rate']*100:.1f}% pick rate "
-              f"({mastery['wins']:,}W/{mastery['games']:,} games)")
-
-def print_position_stats(positions: List[Dict]):
-    """Print position statistics"""
-    print(f"\n=== POSITION STATS ===")
-    for pos in positions:
-        print(f"\n{pos['lane']} Lane:")
-        print(f"  Games: {pos['games']:,} | WR: {pos['win_rate']*100:.2f}%")
-        print(f"  Pick Rate: {pos['pick_rate']*100:.2f}% | Role Rate: {pos['role_rate']*100:.2f}%")
-        print(f"  Ban Rate: {pos['ban_rate']*100:.2f}% | KDA: {pos['kda']:.2f}")
-        print(f"  Tier: {pos['tier']} | Rank: {pos['rank']}")
-
-def print_game_length_performance(performance: List[Dict]):
-    """Print game length performance"""
-    print(f"\n=== GAME LENGTH PERFORMANCE ===")
-    for perf in performance:
-        print(f"{perf['game_length']} min: {perf['win_rate']*100:.1f}% WR (Rank #{perf['rank']})")
-
-def print_trends(trends: Dict):
-    """Print performance trends"""
-    print(f"\n=== PERFORMANCE TRENDS ===")
-    print(f"Overall Rank: #{trends['overall_rank']} | Position Rank: #{trends['position_rank']}")
-    print("Recent Win Rate History:")
-    for patch_data in trends['win_history']:
-        print(f"  Patch {patch_data['patch']}: {patch_data['win_rate']*100:.1f}% WR (Rank #{patch_data['rank']})")
-
-def print_weak_counters(counters: List[Dict]):
-    """Print weak counters"""
-    print(f"\n=== WEAK COUNTERS (Hardest Matchups) ===")
-    for i, counter in enumerate(counters[:10], 1):
-        champion_name = str(counter['champion'])  # Ensure it's a string
-        print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
-              f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
-        
-def print_strong_counters(counters: List[Dict]):
-    """Print strong counters"""
-    print(f"\n=== STRONG COUNTERS (Easiest Matchups) ===")
-    for i, counter in enumerate(counters[:10], 1):
-        champion_name = str(counter['champion'])  # Ensure it's a string
-        print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
-              f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
-
-async def analyze_champion(champion: str, lane: str):
-    """Main function to analyze a champion"""
-    print(f"Fetching {champion} data from OP.GG API...")
+# ========================================
+# TESTING AND DEBUGGING NAMESPACE
+# ========================================
+class TestingUtils:
+    """Namespace for all testing, printing, and debugging functions"""
     
-    async with OpGGAPI() as api:
-        data = await api.get_champion_data(champion.upper(), lane.upper())
-        
-        if 'error' in data:
-            print(f"Error: {data['error']}")
-            return
-        
-        if 'data' not in data or 'data' not in data['data']:
-            print("No valid data received")
-            return
-        
-        # Create analyzer
-        analyzer = ChampionAnalyzer(data)
-        
-        # Get and print ALL stats
-        print("="*60)
-        print(f"COMPLETE ANALYSIS FOR {champion.upper()} {lane.upper()}")
-        print("="*60)
-        
-        # Basic stats
-        basic_stats = analyzer.get_basic_stats()
-        print_basic_stats(basic_stats)
-        
-        # Position stats
-        position_stats = analyzer.get_position_stats()
-        print_position_stats(position_stats)
-        
-        # Summoner spells
-        summoner_spells = analyzer.get_summoner_spells()
-        print_summoner_spells(summoner_spells)
-        
-        # Items
-        core_items = analyzer.get_core_items()
-        print_core_items(core_items)
-        
-        boots = analyzer.get_boots()
-        print_boots(boots)
-        
-        starter_items = analyzer.get_starter_items()
-        print_starter_items(starter_items)
-        
-        final_items = analyzer.get_final_items()
-        print_final_items(final_items)
-        
-        # Runes
-        rune_pages = analyzer.get_rune_pages()
-        print_rune_pages(rune_pages)
-        
-        runes = analyzer.get_runes()
-        print_runes(runes)
-        
-        # Skills
-        skill_masteries = analyzer.get_skill_masteries()
-        print_skill_masteries(skill_masteries)
-        
-        skill_orders = analyzer.get_skill_orders()
-        print_skill_orders(skill_orders)
-        
-        # Performance metrics
-        game_length_performance = analyzer.get_game_length_performance()
-        print_game_length_performance(game_length_performance)
-        
-        trends = analyzer.get_trends()
-        print_trends(trends)
-        
-        # Counters
-        weak_counters = analyzer.get_weak_counters()
-        print_weak_counters(weak_counters)
-        
-        strong_counters = analyzer.get_strong_counters()
-        print_strong_counters(strong_counters)
-        
-        print("="*60)
-        print("ANALYSIS COMPLETE")
-        print("="*60)
-        
-        return analyzer
+    @staticmethod
+    def print_basic_stats(stats: Dict):
+        """Print basic statistics"""
+        print(f"\n=== {stats['champion']} {stats['position']} BASIC STATS ===")
+        print(f"Games Played: {stats['games_played']:,}")
+        print(f"Win Rate: {stats['win_rate']*100:.2f}%")
+        print(f"Pick Rate: {stats['pick_rate']*100:.2f}%")
+        print(f"Ban Rate: {stats['ban_rate']*100:.2f}%")
+        print(f"Average KDA: {stats['kda']:.2f}")
+        print(f"Tier: {stats['tier']} | Rank: {stats['rank']}")
 
+    @staticmethod
+    def print_summoner_spells(spells: List[Dict]):
+        """Print summoner spells"""
+        print(f"\n=== SUMMONER SPELLS ===")
+        for i, spell in enumerate(spells, 1):
+            print(f"{i}. {' + '.join(spell['spells'])} - {spell['pick_rate']*100:.1f}% pick rate "
+                  f"({spell['wins']:,}W/{spell['games']:,} games)")
+
+    @staticmethod
+    def print_core_items(items: List[Dict]):
+        """Print core items"""
+        print(f"\n=== CORE ITEMS ===")
+        for i, item in enumerate(items, 1):
+            print(f"{i}. {' + '.join(item['items'])} - {item['pick_rate']*100:.1f}% pick rate "
+                  f"({item['wins']:,}W/{item['games']:,} games)")
+
+    @staticmethod
+    def print_boots(boots: List[Dict]):
+        """Print boots"""
+        print(f"\n=== BOOTS ===")
+        for i, boot in enumerate(boots, 1):
+            print(f"{i}. {boot['boot']} - {boot['pick_rate']*100:.1f}% pick rate "
+                  f"({boot['wins']:,}W/{boot['games']:,} games)")
+
+    @staticmethod
+    def print_starter_items(starters: List[Dict]):
+        """Print starter items"""
+        print(f"\n=== STARTER ITEMS ===")
+        for i, starter in enumerate(starters, 1):
+            print(f"{i}. {' + '.join(starter['items'])} - {starter['pick_rate']*100:.1f}% pick rate "
+                  f"({starter['wins']:,}W/{starter['games']:,} games)")
+
+    @staticmethod
+    def print_final_items(items: List[Dict]):
+        """Print final items"""
+        print(f"\n=== FINAL ITEMS ===")
+        for i, item in enumerate(items, 1):
+            print(f"{i}. {item['item']} - {item['pick_rate']*100:.1f}% pick rate "
+                  f"({item['wins']:,}W/{item['games']:,} games)")
+
+    @staticmethod
+    def print_rune_pages(rune_pages: List[Dict]):
+        """Print rune pages"""
+        print(f"\n=== RUNE PAGES ===")
+        for i, rune in enumerate(rune_pages, 1):
+            print(f"{i}. {rune['primary']} + {rune['secondary']} - {rune['pick_rate']*100:.1f}% pick rate "
+                  f"({rune['wins']:,}W/{rune['games']:,} games)")
+
+    @staticmethod
+    def print_runes(runes: List[Dict]):
+        """Print detailed runes"""
+        print(f"\n=== DETAILED RUNES ===")
+        for i, rune in enumerate(runes, 1):
+            print(f"\n{i}. {rune['primary_page']} + {rune['secondary_page']} - {rune['pick_rate']*100:.1f}% pick rate")
+            print(f"   Primary: {' > '.join(rune['primary_runes'])}")
+            print(f"   Secondary: {' + '.join(rune['secondary_runes'])}")
+            print(f"   ({rune['wins']:,}W/{rune['games']:,} games)")
+
+    @staticmethod
+    def print_skill_orders(skills: List[Dict]):
+        """Print skill orders"""
+        print(f"\n=== SKILL ORDERS ===")
+        for i, skill in enumerate(skills, 1):
+            print(f"{i}. {' > '.join(skill['order'])} - {skill['pick_rate']*100:.1f}% pick rate "
+                  f"({skill['wins']:,}W/{skill['games']:,} games)")
+
+    @staticmethod
+    def print_skill_masteries(masteries: List[Dict]):
+        """Print skill masteries"""
+        print(f"\n=== SKILL MASTERIES ===")
+        for i, mastery in enumerate(masteries, 1):
+            print(f"{i}. {' > '.join(mastery['skill_priority'])} priority - {mastery['pick_rate']*100:.1f}% pick rate "
+                  f"({mastery['wins']:,}W/{mastery['games']:,} games)")
+
+    @staticmethod
+    def print_position_stats(positions: List[Dict]):
+        """Print position statistics"""
+        print(f"\n=== POSITION STATS ===")
+        for pos in positions:
+            print(f"\n{pos['lane']} Lane:")
+            print(f"  Games: {pos['games']:,} | WR: {pos['win_rate']*100:.2f}%")
+            print(f"  Pick Rate: {pos['pick_rate']*100:.2f}% | Role Rate: {pos['role_rate']*100:.2f}%")
+            print(f"  Ban Rate: {pos['ban_rate']*100:.2f}% | KDA: {pos['kda']:.2f}")
+            print(f"  Tier: {pos['tier']} | Rank: {pos['rank']}")
+
+    @staticmethod
+    def print_game_length_performance(performance: List[Dict]):
+        """Print game length performance"""
+        print(f"\n=== GAME LENGTH PERFORMANCE ===")
+        for perf in performance:
+            print(f"{perf['game_length']} min: {perf['win_rate']*100:.1f}% WR (Rank #{perf['rank']})")
+
+    @staticmethod
+    def print_trends(trends: Dict):
+        """Print performance trends"""
+        print(f"\n=== PERFORMANCE TRENDS ===")
+        print(f"Overall Rank: #{trends['overall_rank']} | Position Rank: #{trends['position_rank']}")
+        print("Recent Win Rate History:")
+        for patch_data in trends['win_history']:
+            print(f"  Patch {patch_data['patch']}: {patch_data['win_rate']*100:.1f}% WR (Rank #{patch_data['rank']})")
+
+    @staticmethod
+    def print_weak_counters(counters: List[Dict]):
+        """Print weak counters"""
+        print(f"\n=== WEAK COUNTERS (Hardest Matchups) ===")
+        for i, counter in enumerate(counters[:10], 1):
+            champion_name = str(counter['champion'])  # Ensure it's a string
+            print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
+                  f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
+            
+    @staticmethod
+    def print_strong_counters(counters: List[Dict]):
+        """Print strong counters"""
+        print(f"\n=== STRONG COUNTERS (Easiest Matchups) ===")
+        for i, counter in enumerate(counters[:10], 1):
+            champion_name = str(counter['champion'])  # Ensure it's a string
+            print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
+                  f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
+
+    @staticmethod
+    async def analyze_champion(champion: str, lane: str):
+        """Main testing function to analyze a champion"""
+        print(f"Fetching {champion} data from OP.GG API...")
+        
+        async with OpGGAPI() as api:
+            data = await api.get_champion_analysis(champion.upper(), lane.upper())
+            
+            if 'error' in data:
+                print(f"Error: {data['error']}")
+                return
+            
+            if 'data' not in data or 'data' not in data['data']:
+                print("No valid data received")
+                return
+            
+            # Create analyzer
+            analyzer = ChampionAnalyzer(data)
+            
+            # Get and print ALL stats
+            print("="*60)
+            print(f"COMPLETE ANALYSIS FOR {champion.upper()} {lane.upper()}")
+            print("="*60)
+            
+            # Basic stats
+            basic_stats = analyzer.get_basic_stats()
+            TestingUtils.print_basic_stats(basic_stats)
+            
+            # Position stats
+            position_stats = analyzer.get_position_stats()
+            TestingUtils.print_position_stats(position_stats)
+            
+            # Summoner spells
+            summoner_spells = analyzer.get_summoner_spells()
+            TestingUtils.print_summoner_spells(summoner_spells)
+            
+            # Items
+            core_items = analyzer.get_core_items()
+            TestingUtils.print_core_items(core_items)
+            
+            boots = analyzer.get_boots()
+            TestingUtils.print_boots(boots)
+            
+            starter_items = analyzer.get_starter_items()
+            TestingUtils.print_starter_items(starter_items)
+            
+            final_items = analyzer.get_final_items()
+            TestingUtils.print_final_items(final_items)
+            
+            # Runes
+            rune_pages = analyzer.get_rune_pages()
+            TestingUtils.print_rune_pages(rune_pages)
+            
+            runes = analyzer.get_runes()
+            TestingUtils.print_runes(runes)
+            
+            # Skills
+            skill_masteries = analyzer.get_skill_masteries()
+            TestingUtils.print_skill_masteries(skill_masteries)
+            
+            skill_orders = analyzer.get_skill_orders()
+            TestingUtils.print_skill_orders(skill_orders)
+            
+            # Performance metrics
+            game_length_performance = analyzer.get_game_length_performance()
+            TestingUtils.print_game_length_performance(game_length_performance)
+            
+            trends = analyzer.get_trends()
+            TestingUtils.print_trends(trends)
+            
+            # Counters
+            weak_counters = analyzer.get_weak_counters()
+            TestingUtils.print_weak_counters(weak_counters)
+            
+            strong_counters = analyzer.get_strong_counters()
+            TestingUtils.print_strong_counters(strong_counters)
+            
+            print("="*60)
+            print("ANALYSIS COMPLETE")
+            print("="*60)
+            
+            return analyzer
+
+# ========================================
+# MAIN EXECUTION (TESTING ONLY)
+# ========================================
 if __name__ == "__main__":
-    # test api
-    asyncio.run(analyze_champion("zed", "mid"))
+    # Test API
+    asyncio.run(TestingUtils.analyze_champion("zed", "mid"))

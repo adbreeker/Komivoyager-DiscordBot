@@ -569,7 +569,7 @@ def setup_commands(bot):
         
         try:
             async with opgg_api.OpGGAPI() as api:
-                data = await api.get_champion_data(champion_formatted, lane_formatted)
+                data = await api.get_champion_analysis(champion_formatted, lane_formatted)
                 
                 if 'error' in data:
                     await interaction.followup.send(f"❌ Error fetching data: {data['error']}")
@@ -769,7 +769,7 @@ def setup_commands(bot):
         
         try:
             async with opgg_api.OpGGAPI() as api:
-                data = await api.get_champion_data(champion_formatted, lane_formatted)
+                data = await api.get_champion_analysis(champion_formatted, lane_formatted)
                 
                 if 'error' in data:
                     await interaction.followup.send(f"❌ Error fetching data: {data['error']}")
