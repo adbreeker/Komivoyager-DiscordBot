@@ -82,6 +82,17 @@ def setup_commands(bot):
             inline=False
         )
         
+        # League of Legends Commands
+        embed.add_field(
+            name="🏆 League of Legends Commands",
+            value=(
+                "`/kv_lolchampion-data <champion>` - Get detailed champion information and abilities\n"
+                "`/kv_lolchampion-analysis <champion> <lane>` - Get champion analysis with builds and stats\n"
+                "`/kv_lolmatchup <champion> <lane>` - Get champion matchup information (counters)\n"
+            ),
+            inline=False
+        )
+        
         # Additional Info
         embed.add_field(
             name="ℹ️ Additional Info",
@@ -89,7 +100,8 @@ def setup_commands(bot):
                 "• Background music starts and loops automatically\n"
                 "• Transcription supports Polish language\n"
                 "• Bot disconnects when no users are in voice channel\n"
-                "• React with 🗑️ to any bot message to instantly delete it"
+                "• React with 🗑️ to any bot message to instantly delete it\n"
+                "• LoL commands use OP.GG data for accurate statistics\n"
             ),
             inline=False
         )
@@ -551,10 +563,145 @@ def setup_commands(bot):
             await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 #lolchampion command ----------------------------------------------------------------------------------------------------- lolchampion command
-    @bot.tree.command(name="kv_lolchampion", description="Get full champion analysis from OP.GG")
+    @bot.tree.command(name="kv_lolchampion-data", description="Get champion metadata from OP.GG")
+    @app_commands.describe(champion="Champion name")
+    async def lolchampion(interaction: discord.Interaction, champion: str):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_lolchampion-data' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with champion: '{champion}'")
+        
+        # Parse and validate inputs
+        champion_formatted = champion.upper().replace(' ', '_')
+            
+        await interaction.response.defer()
+        
+        try:
+            async with opgg_api.OpGGAPI() as api:
+                # Always get metadata
+                metadata_data = await api.get_champion_metadata(champion_formatted)
+                
+                if 'error' in metadata_data:
+                    await interaction.followup.send(f"❌ Error fetching metadata: {metadata_data['error']}")
+                    return
+                
+                # Create metadata analyzer
+                metadata = opgg_api.ChampionMetadata(metadata_data)
+                
+                # Get metadata info
+                champion_info = metadata.get_champion_info()
+                abilities = metadata.get_abilities()
+                stats = metadata.get_champion_stats()
+                difficulty = metadata.get_difficulty_info()
+                tips = metadata.get_tips()
+                
+                # Create metadata embed
+                embed = discord.Embed(
+                    title=f"📖 {champion_info['name']} Champion Information",
+                    color=0x1e90ff
+                )
+
+                embed.add_field(name="\u200b", value="", inline=False)
+                embed.add_field(
+                    name="🧬 **Basics**", 
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 
+                    inline=False
+                )
+                
+                # Basic champion info
+                basic_info = f"**ID:** {champion_info['id']}\n"
+                basic_info += f"**Key:** {champion_info['key']}\n"
+                basic_info += f"**Resource:** {champion_info['resource']}\n"
+                if champion_info['tags']:
+                    basic_info += f"**Tags:** {', '.join(champion_info['tags'])}\n"
+                basic_info += f"**Difficulty:** {difficulty['difficulty']}/10 (ATK: {difficulty['attack']}, DEF: {difficulty['defense']}, MAG: {difficulty['magic']})"
+                
+                embed.add_field(name="ℹ️ **Basic Information**", value=basic_info, inline=False)
+                
+                # Base stats
+                stats_text = f"**Health:** {stats['hp']} (+{stats['hp_per_level']}/lvl)\n"
+                stats_text += f"**Mana/Energy:** {stats['mp']} (+{stats['mp_per_level']}/lvl)\n"
+                stats_text += f"**Attack Damage:** {stats['attack_damage']} (+{stats['attack_damage_per_level']}/lvl)\n"
+                stats_text += f"**Attack Speed:** {stats['attack_speed']} (+{stats['attack_speed_per_level']}%/lvl)\n"
+                stats_text += f"**Armor:** {stats['armor']} (+{stats['armor_per_level']}/lvl)\n"
+                stats_text += f"**Magic Resist:** {stats['magic_resist']} (+{stats['magic_resist_per_level']}/lvl)\n"
+                stats_text += f"**Move Speed:** {stats['move_speed']} | **Attack Range:** {stats['attack_range']}"
+                
+                embed.add_field(name="\u200b", value="", inline=False)
+                embed.add_field(name="📊 **Base Stats**", value=stats_text, inline=False)
+                
+                # Abilities
+                embed.add_field(name="\u200b", value="\u200b", inline=False)
+                embed.add_field(
+                    name="⚔️ **Abilities**", 
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 
+                    inline=False)
+                
+                for ability in abilities[:5]:  # Limit to P, Q, W, E, R
+                    abilities_text = ""
+                    
+                    # Add numerical data if available
+                    ability_details = []
+                    if ability.get('range'):
+                        ranges = ability['range']
+                        if len(ranges) == 1:
+                            ability_details.append(f"Range: {ranges[0]}")
+                        else:
+                            ability_details.append(f"Range: {'/'.join(map(str, ranges))}")
+                    
+                    if ability.get('cooldown_exact'):
+                        cooldowns = ability['cooldown_exact']
+                        if len(cooldowns) == 1:
+                            ability_details.append(f"CD: {cooldowns[0]}s")
+                        else:
+                            ability_details.append(f"CD: {'/'.join(map(str, cooldowns))}s")
+                    
+                    if ability.get('cost'):
+                        costs = ability['cost']
+                        if len(costs) == 1:
+                            ability_details.append(f"Cost: {costs[0]}")
+                        else:
+                            ability_details.append(f"Cost: {'/'.join(map(str, costs))}")
+                    
+                    if ability_details:
+                        abilities_text += f"`{' | '.join(ability_details)}`\n"
+                    
+                    if ability.get('description'):
+                        desc = ability['description']
+                        abilities_text += f"{desc}\n\n"
+                    else:
+                        abilities_text += "\n"
+
+                    embed.add_field(name=f"**{ability['key']}: {ability['name']}**", value=abilities_text.strip(), inline=False)
+
+                embed.add_field(name="\u200b", value="\u200b", inline=False)
+                embed.add_field(
+                    name="💡 **Tips**", 
+                    value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 
+                    inline=False
+                )
+
+                for adressat in ['ally', 'enemy']:
+                    if tips[adressat]:
+                        tips_text = ""
+                        for tip in tips[adressat]:
+                            tips_text += f"- {tip}\n"
+                        
+                        embed.add_field(
+                            name=f"{'💚' if adressat == 'ally' else '😡'} **{adressat.capitalize()} Tips**",
+                            value=tips_text.strip(),
+                            inline=False
+                        )
+
+            # Send metadata embed
+            await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error in lolchampion command: {str(e)}")
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
+
+#lolchampion command ----------------------------------------------------------------------------------------------------- lolchampion command
+    @bot.tree.command(name="kv_lolchampion-analysis", description="Get champion analysis from OP.GG")
     @app_commands.describe(champion="Champion name", lane="Lane (top/jungle/mid/adc/support)")
     async def lolchampion(interaction: discord.Interaction, champion: str, lane: str):
-        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_lolchampion' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with champion: '{champion}' lane: '{lane}'")
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_lolchampion-analysis' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with champion: '{champion}' lane: '{lane}'")
         
         # Parse and validate inputs
         champion_formatted = champion.upper().replace(' ', '_')
@@ -604,6 +751,7 @@ def setup_commands(bot):
                 )
                 
                 # 1. Header Stats
+                embed.add_field(name="\u200b", value="", inline=False)
                 embed.add_field(
                     name="📊 **STATISTICS**",
                     value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",

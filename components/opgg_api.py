@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 from typing import List, Dict, Optional
 import json
+import re
 
 class OpGGAPI:
     def __init__(self):
@@ -47,7 +48,46 @@ class OpGGAPI:
                             parsed_data = json.loads(inner_json_str)
                             
                             # Save to file
-                            #with open('scrapped.json', 'w', encoding='utf-8') as f:
+                            #with open('scrapped-analysis.json', 'w', encoding='utf-8') as f:
+                            #   json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+                            
+                            return parsed_data
+                    
+                    return data
+        
+        except (aiohttp.ClientError, json.JSONDecodeError) as e:
+            return {"error": f"API error: {str(e)}"}
+
+    async def get_champion_metadata(self, champion_name: str) -> Dict:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "lol-champion-meta-data",
+                "arguments": {
+                    "champion": champion_name,
+                }
+            }
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "DiscordBot/1.0"
+        }
+        
+        try:
+            async with self.session.post(self.base_url, json=payload, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    if 'result' in data and 'content' in data['result']:
+                        content = data['result']['content']
+                        if content and len(content) > 0 and 'text' in content[0]:
+                            inner_json_str = content[0]['text']
+                            parsed_data = json.loads(inner_json_str)
+
+                            # Save to file
+                            #with open('scrapped-metadata.json', 'w', encoding='utf-8') as f:
                             #   json.dump(parsed_data, f, indent=2, ensure_ascii=False)
                             
                             return parsed_data
@@ -396,8 +436,7 @@ class ChampionAnalyzer:
                     'champion': champion_name,
                     'games_played': plays,
                     'wins': wins,
-                    'losses': plays - wins,
-                    'win_rate': win_rate
+                    'losses': plays - wins,                    'win_rate': win_rate
                 })
             except (ValueError, TypeError):
                 continue
@@ -405,228 +444,599 @@ class ChampionAnalyzer:
         counters.sort(key=lambda x: x['win_rate'], reverse=True)
         return counters
 
+class ChampionMetadata:
+    def __init__(self, data: Dict):
+        self.data = data
+        self.champion = data.get('champion', 'Unknown')
+        
+        # Get schema and data
+        self.schema = data.get('data', {}).get('schema', {})
+        self.champion_data = data.get('data', {}).get('data', {})
+        
+        # Build lookups from localized_metadata if available
+        if 'localized_metadata' in data:
+            self.metadata = data['localized_metadata']
+            self.item_lookup = {item['id']: item for item in self.metadata.get('items', [])}
+            self.spell_lookup = {spell['id']: spell for spell in self.metadata.get('spells', [])}
+            self.champion_lookup = {champ['id']: champ for champ in self.metadata.get('champions', [])}
+            self.rune_lookup = {rune['id']: rune for rune in self.metadata.get('runes', [])}
+            self.rune_page_lookup = {page['id']: page for page in self.metadata.get('rune_pages', [])}
+        else:
+            self.metadata = {}
+            self.item_lookup = {}
+            self.spell_lookup = {}
+            self.champion_lookup = {}
+            self.rune_lookup = {}
+            self.rune_page_lookup = {}
+
+    def get_champion_info(self) -> Dict:
+        """Get basic champion information"""
+        return {
+            'champion': self.champion,
+            'id': self.champion_data.get('0', 'Unknown'),
+            'key': self.champion_data.get('1', 'Unknown'),
+            'name': self.champion_data.get('2', 'Unknown'),
+            'image_url': self.champion_data.get('3', ''),
+            'resource': self.champion_data.get('4', 'Unknown'),
+            'tags': self.champion_data.get('tags', []),
+            'difficulty_info': self.champion_data.get('info', [])  # [attack, defense, magic, difficulty]
+        }
+
+    def get_abilities(self) -> List[Dict]:
+        """Get champion abilities information with detailed numerical data"""
+        abilities = []
+        
+        # Add passive if available
+        if 'passive' in self.champion_data:
+            passive = self.champion_data['passive']
+            if isinstance(passive, list) and len(passive) >= 4:
+                # Clean HTML tags from description
+                description = re.sub(r'<[^>]+>', '', passive[1]) if passive[1] else ''
+                description = re.sub(r'\s+', ' ', description).strip()
+                
+                abilities.append({
+                    'key': 'P',
+                    'name': passive[0],
+                    'description': description,
+                    'image_url': passive[2],
+                    'video_url': passive[3],
+                    'type': 'passive'
+                })
+        
+        # Add spells (Q, W, E, R)
+        spells = self.champion_data.get('spells', [])
+        for i, spell in enumerate(spells):
+            if isinstance(spell, dict):
+                # Clean HTML tags from description and tooltip
+                description = spell.get('2', '')
+                if description:
+                    description = re.sub(r'<[^>]+>', '', description)
+                    description = re.sub(r'\s+', ' ', description).strip()
+                    # Add newline before Passive: or Active: if not at start
+                    description = re.sub(r'(?<!^)(?<!\n)(Passive:|Active:)', r'\n\1', description)
+                
+                tooltip = spell.get('4', '')
+                if tooltip:
+                    tooltip = re.sub(r'<[^>]+>', '', tooltip)
+                    tooltip = re.sub(r'\s+', ' ', tooltip).strip()
+                    # Add newline before Passive: or Active: if not at start
+                    tooltip = re.sub(r'(?<!^)(?<!\n)(Passive:|Active:)', r'\n\1', tooltip)
+                
+                ability_data = {
+                    'key': spell.get('0', ['Q', 'W', 'E', 'R'][i] if i < 4 else f'Spell{i+1}'),
+                    'name': spell.get('1', f'Ability {i+1}'),
+                    'description': description,
+                    'max_rank': spell.get('3', 5),
+                    'tooltip': tooltip,
+                    'image_url': spell.get('5', ''),
+                    'video_url': spell.get('6', ''),
+                    'type': 'spell'
+                }
+                
+                # Add detailed numerical data if available
+                if 'range_burn' in spell:
+                    ability_data['range'] = spell['range_burn']
+                
+                if 'cooldown_burn' in spell:
+                    ability_data['cooldown'] = spell['cooldown_burn']
+                
+                if 'cooldown_burn_float' in spell:
+                    ability_data['cooldown_exact'] = spell['cooldown_burn_float']
+                
+                if 'cost_burn' in spell:
+                    ability_data['cost'] = spell['cost_burn']
+                
+                abilities.append(ability_data)
+        
+        return abilities
+
+    def get_champion_stats(self) -> Dict:
+        """Get champion base stats"""
+        stats_list = self.champion_data.get('stats', [])
+        stats_schema = self.schema.get('stats', [])
+        
+        # Map the list values to their schema keys
+        stats_dict = {}
+        for i, stat_name in enumerate(stats_schema):
+            if i < len(stats_list):
+                stats_dict[stat_name] = stats_list[i]
+            else:
+                stats_dict[stat_name] = 0
+        
+        return {
+            'hp': stats_dict.get('hp', 0),
+            'hp_per_level': stats_dict.get('hpperlevel', 0),
+            'mp': stats_dict.get('mp', 0),
+            'mp_per_level': stats_dict.get('mpperlevel', 0),
+            'armor': stats_dict.get('armor', 0),
+            'armor_per_level': stats_dict.get('armorperlevel', 0),
+            'magic_resist': stats_dict.get('spellblock', 0),
+            'magic_resist_per_level': stats_dict.get('spellblockperlevel', 0),
+            'attack_damage': stats_dict.get('attackdamage', 0),
+            'attack_damage_per_level': stats_dict.get('attackdamageperlevel', 0),
+            'attack_speed': stats_dict.get('attackspeed', 0),
+            'attack_speed_per_level': stats_dict.get('attackspeedperlevel', 0),
+            'attack_range': stats_dict.get('attackrange', 0),
+            'move_speed': stats_dict.get('movespeed', 0),
+            'crit': stats_dict.get('crit', 0),
+            'crit_per_level': stats_dict.get('critperlevel', 0),
+            'hp_regen': stats_dict.get('hpregen', 0),
+            'hp_regen_per_level': stats_dict.get('hpregenperlevel', 0),
+            'mp_regen': stats_dict.get('mpregen', 0),
+            'mp_regen_per_level': stats_dict.get('mpregenperlevel', 0)
+        }
+
+    def get_tips(self) -> Dict:
+        """Get playing tips"""
+        return {
+            'ally': self.champion_data.get('ally_tips', []),
+            'enemy': self.champion_data.get('enemy_tips', [])
+        }
+
+    def get_difficulty_info(self) -> Dict:
+        """Get champion difficulty information"""
+        info = self.champion_data.get('info', [])
+        if len(info) >= 4:
+            return {
+                'attack': info[0],
+                'defense': info[1], 
+                'magic': info[2],
+                'difficulty': info[3]
+            }
+        return {
+            'attack': 0,
+            'defense': 0,
+            'magic': 0,
+            'difficulty': 0
+        }
+
+    def get_counters_info(self) -> Dict:
+        """Get counter information (placeholder - not available in metadata)"""
+        return {
+            'strong_against': [],
+            'weak_against': []
+        }
+
+    def get_strengths_weaknesses(self) -> Dict:
+        """Get champion strengths and weaknesses (placeholder - not available in metadata)"""
+        return {
+            'strengths': [],
+            'weaknesses': []
+        }
+
 # ========================================
 # TESTING AND DEBUGGING NAMESPACE
 # ========================================
 class TestingUtils:
     """Namespace for all testing, printing, and debugging functions"""
     
-    @staticmethod
-    def print_basic_stats(stats: Dict):
-        """Print basic statistics"""
-        print(f"\n=== {stats['champion']} {stats['position']} BASIC STATS ===")
-        print(f"Games Played: {stats['games_played']:,}")
-        print(f"Win Rate: {stats['win_rate']*100:.2f}%")
-        print(f"Pick Rate: {stats['pick_rate']*100:.2f}%")
-        print(f"Ban Rate: {stats['ban_rate']*100:.2f}%")
-        print(f"Average KDA: {stats['kda']:.2f}")
-        print(f"Tier: {stats['tier']} | Rank: {stats['rank']}")
-
-    @staticmethod
-    def print_summoner_spells(spells: List[Dict]):
-        """Print summoner spells"""
-        print(f"\n=== SUMMONER SPELLS ===")
-        for i, spell in enumerate(spells, 1):
-            print(f"{i}. {' + '.join(spell['spells'])} - {spell['pick_rate']*100:.1f}% pick rate "
-                  f"({spell['wins']:,}W/{spell['games']:,} games)")
-
-    @staticmethod
-    def print_core_items(items: List[Dict]):
-        """Print core items"""
-        print(f"\n=== CORE ITEMS ===")
-        for i, item in enumerate(items, 1):
-            print(f"{i}. {' + '.join(item['items'])} - {item['pick_rate']*100:.1f}% pick rate "
-                  f"({item['wins']:,}W/{item['games']:,} games)")
-
-    @staticmethod
-    def print_boots(boots: List[Dict]):
-        """Print boots"""
-        print(f"\n=== BOOTS ===")
-        for i, boot in enumerate(boots, 1):
-            print(f"{i}. {boot['boot']} - {boot['pick_rate']*100:.1f}% pick rate "
-                  f"({boot['wins']:,}W/{boot['games']:,} games)")
-
-    @staticmethod
-    def print_starter_items(starters: List[Dict]):
-        """Print starter items"""
-        print(f"\n=== STARTER ITEMS ===")
-        for i, starter in enumerate(starters, 1):
-            print(f"{i}. {' + '.join(starter['items'])} - {starter['pick_rate']*100:.1f}% pick rate "
-                  f"({starter['wins']:,}W/{starter['games']:,} games)")
-
-    @staticmethod
-    def print_final_items(items: List[Dict]):
-        """Print final items"""
-        print(f"\n=== FINAL ITEMS ===")
-        for i, item in enumerate(items, 1):
-            print(f"{i}. {item['item']} - {item['pick_rate']*100:.1f}% pick rate "
-                  f"({item['wins']:,}W/{item['games']:,} games)")
-
-    @staticmethod
-    def print_rune_pages(rune_pages: List[Dict]):
-        """Print rune pages"""
-        print(f"\n=== RUNE PAGES ===")
-        for i, rune in enumerate(rune_pages, 1):
-            print(f"{i}. {rune['primary']} + {rune['secondary']} - {rune['pick_rate']*100:.1f}% pick rate "
-                  f"({rune['wins']:,}W/{rune['games']:,} games)")
-
-    @staticmethod
-    def print_runes(runes: List[Dict]):
-        """Print detailed runes"""
-        print(f"\n=== DETAILED RUNES ===")
-        for i, rune in enumerate(runes, 1):
-            print(f"\n{i}. {rune['primary_page']} + {rune['secondary_page']} - {rune['pick_rate']*100:.1f}% pick rate")
-            print(f"   Primary: {' > '.join(rune['primary_runes'])}")
-            print(f"   Secondary: {' + '.join(rune['secondary_runes'])}")
-            print(f"   ({rune['wins']:,}W/{rune['games']:,} games)")
-
-    @staticmethod
-    def print_skill_orders(skills: List[Dict]):
-        """Print skill orders"""
-        print(f"\n=== SKILL ORDERS ===")
-        for i, skill in enumerate(skills, 1):
-            print(f"{i}. {' > '.join(skill['order'])} - {skill['pick_rate']*100:.1f}% pick rate "
-                  f"({skill['wins']:,}W/{skill['games']:,} games)")
-
-    @staticmethod
-    def print_skill_masteries(masteries: List[Dict]):
-        """Print skill masteries"""
-        print(f"\n=== SKILL MASTERIES ===")
-        for i, mastery in enumerate(masteries, 1):
-            print(f"{i}. {' > '.join(mastery['skill_priority'])} priority - {mastery['pick_rate']*100:.1f}% pick rate "
-                  f"({mastery['wins']:,}W/{mastery['games']:,} games)")
-
-    @staticmethod
-    def print_position_stats(positions: List[Dict]):
-        """Print position statistics"""
-        print(f"\n=== POSITION STATS ===")
-        for pos in positions:
-            print(f"\n{pos['lane']} Lane:")
-            print(f"  Games: {pos['games']:,} | WR: {pos['win_rate']*100:.2f}%")
-            print(f"  Pick Rate: {pos['pick_rate']*100:.2f}% | Role Rate: {pos['role_rate']*100:.2f}%")
-            print(f"  Ban Rate: {pos['ban_rate']*100:.2f}% | KDA: {pos['kda']:.2f}")
-            print(f"  Tier: {pos['tier']} | Rank: {pos['rank']}")
-
-    @staticmethod
-    def print_game_length_performance(performance: List[Dict]):
-        """Print game length performance"""
-        print(f"\n=== GAME LENGTH PERFORMANCE ===")
-        for perf in performance:
-            print(f"{perf['game_length']} min: {perf['win_rate']*100:.1f}% WR (Rank #{perf['rank']})")
-
-    @staticmethod
-    def print_trends(trends: Dict):
-        """Print performance trends"""
-        print(f"\n=== PERFORMANCE TRENDS ===")
-        print(f"Overall Rank: #{trends['overall_rank']} | Position Rank: #{trends['position_rank']}")
-        print("Recent Win Rate History:")
-        for patch_data in trends['win_history']:
-            print(f"  Patch {patch_data['patch']}: {patch_data['win_rate']*100:.1f}% WR (Rank #{patch_data['rank']})")
-
-    @staticmethod
-    def print_weak_counters(counters: List[Dict]):
-        """Print weak counters"""
-        print(f"\n=== WEAK COUNTERS (Hardest Matchups) ===")
-        for i, counter in enumerate(counters[:10], 1):
-            champion_name = str(counter['champion'])  # Ensure it's a string
-            print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
-                  f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
-            
-    @staticmethod
-    def print_strong_counters(counters: List[Dict]):
-        """Print strong counters"""
-        print(f"\n=== STRONG COUNTERS (Easiest Matchups) ===")
-        for i, counter in enumerate(counters[:10], 1):
-            champion_name = str(counter['champion'])  # Ensure it's a string
-            print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
-                  f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
-
-    @staticmethod
-    async def analyze_champion(champion: str, lane: str):
-        """Main testing function to analyze a champion"""
-        print(f"Fetching {champion} data from OP.GG API...")
+    class TestChampionAnalysis:
+        """Testing utilities for ChampionAnalyzer"""
         
-        async with OpGGAPI() as api:
-            data = await api.get_champion_analysis(champion.upper(), lane.upper())
+        @staticmethod
+        def print_basic_stats(stats: Dict):
+            """Print basic statistics"""
+            print(f"\n=== {stats['champion']} {stats['position']} BASIC STATS ===")
+            print(f"Games Played: {stats['games_played']:,}")
+            print(f"Win Rate: {stats['win_rate']*100:.2f}%")
+            print(f"Pick Rate: {stats['pick_rate']*100:.2f}%")
+            print(f"Ban Rate: {stats['ban_rate']*100:.2f}%")
+            print(f"Average KDA: {stats['kda']:.2f}")
+            print(f"Tier: {stats['tier']} | Rank: {stats['rank']}")
+
+        @staticmethod
+        def print_summoner_spells(spells: List[Dict]):
+            """Print summoner spells"""
+            print(f"\n=== SUMMONER SPELLS ===")
+            for i, spell in enumerate(spells, 1):
+                print(f"{i}. {' + '.join(spell['spells'])} - {spell['pick_rate']*100:.1f}% pick rate "
+                      f"({spell['wins']:,}W/{spell['games']:,} games)")
+
+        @staticmethod
+        def print_core_items(items: List[Dict]):
+            """Print core items"""
+            print(f"\n=== CORE ITEMS ===")
+            for i, item in enumerate(items, 1):
+                print(f"{i}. {' + '.join(item['items'])} - {item['pick_rate']*100:.1f}% pick rate "
+                      f"({item['wins']:,}W/{item['games']:,} games)")
+
+        @staticmethod
+        def print_boots(boots: List[Dict]):
+            """Print boots"""
+            print(f"\n=== BOOTS ===")
+            for i, boot in enumerate(boots, 1):
+                print(f"{i}. {boot['boot']} - {boot['pick_rate']*100:.1f}% pick rate "
+                      f"({boot['wins']:,}W/{boot['games']:,} games)")
+
+        @staticmethod
+        def print_starter_items(starters: List[Dict]):
+            """Print starter items"""
+            print(f"\n=== STARTER ITEMS ===")
+            for i, starter in enumerate(starters, 1):
+                print(f"{i}. {' + '.join(starter['items'])} - {starter['pick_rate']*100:.1f}% pick rate "
+                      f"({starter['wins']:,}W/{starter['games']:,} games)")
+
+        @staticmethod
+        def print_final_items(items: List[Dict]):
+            """Print final items"""
+            print(f"\n=== FINAL ITEMS ===")
+            for i, item in enumerate(items, 1):
+                print(f"{i}. {item['item']} - {item['pick_rate']*100:.1f}% pick rate "
+                      f"({item['wins']:,}W/{item['games']:,} games)")
+
+        @staticmethod
+        def print_rune_pages(rune_pages: List[Dict]):
+            """Print rune pages"""
+            print(f"\n=== RUNE PAGES ===")
+            for i, rune in enumerate(rune_pages, 1):
+                print(f"{i}. {rune['primary']} + {rune['secondary']} - {rune['pick_rate']*100:.1f}% pick rate "
+                      f"({rune['wins']:,}W/{rune['games']:,} games)")
+
+        @staticmethod
+        def print_runes(runes: List[Dict]):
+            """Print detailed runes"""
+            print(f"\n=== DETAILED RUNES ===")
+            for i, rune in enumerate(runes, 1):
+                print(f"\n{i}. {rune['primary_page']} + {rune['secondary_page']} - {rune['pick_rate']*100:.1f}% pick rate")
+                print(f"   Primary: {' > '.join(rune['primary_runes'])}")
+                print(f"   Secondary: {' + '.join(rune['secondary_runes'])}")
+                print(f"   ({rune['wins']:,}W/{rune['games']:,} games)")
+
+        @staticmethod
+        def print_skill_orders(skills: List[Dict]):
+            """Print skill orders"""
+            print(f"\n=== SKILL ORDERS ===")
+            for i, skill in enumerate(skills, 1):
+                print(f"{i}. {' > '.join(skill['order'])} - {skill['pick_rate']*100:.1f}% pick rate "
+                      f"({skill['wins']:,}W/{skill['games']:,} games)")
+
+        @staticmethod
+        def print_skill_masteries(masteries: List[Dict]):
+            """Print skill masteries"""
+            print(f"\n=== SKILL MASTERIES ===")
+            for i, mastery in enumerate(masteries, 1):
+                print(f"{i}. {' > '.join(mastery['skill_priority'])} priority - {mastery['pick_rate']*100:.1f}% pick rate "
+                      f"({mastery['wins']:,}W/{mastery['games']:,} games)")
+
+        @staticmethod
+        def print_position_stats(positions: List[Dict]):
+            """Print position statistics"""
+            print(f"\n=== POSITION STATS ===")
+            for pos in positions:
+                print(f"\n{pos['lane']} Lane:")
+                print(f"  Games: {pos['games']:,} | WR: {pos['win_rate']*100:.2f}%")
+                print(f"  Pick Rate: {pos['pick_rate']*100:.2f}% | Role Rate: {pos['role_rate']*100:.2f}%")
+                print(f"  Ban Rate: {pos['ban_rate']*100:.2f}% | KDA: {pos['kda']:.2f}")
+                print(f"  Tier: {pos['tier']} | Rank: {pos['rank']}")
+
+        @staticmethod
+        def print_game_length_performance(performance: List[Dict]):
+            """Print game length performance"""
+            print(f"\n=== GAME LENGTH PERFORMANCE ===")
+            for perf in performance:
+                print(f"{perf['game_length']} min: {perf['win_rate']*100:.1f}% WR (Rank #{perf['rank']})")
+
+        @staticmethod
+        def print_trends(trends: Dict):
+            """Print performance trends"""
+            print(f"\n=== PERFORMANCE TRENDS ===")
+            print(f"Overall Rank: #{trends['overall_rank']} | Position Rank: #{trends['position_rank']}")
+            print("Recent Win Rate History:")
+            for patch_data in trends['win_history']:
+                print(f"  Patch {patch_data['patch']}: {patch_data['win_rate']*100:.1f}% WR (Rank #{patch_data['rank']})")
+
+        @staticmethod
+        def print_weak_counters(counters: List[Dict]):
+            """Print weak counters"""
+            print(f"\n=== WEAK COUNTERS (Hardest Matchups) ===")
+            for i, counter in enumerate(counters[:10], 1):
+                champion_name = str(counter['champion'])  # Ensure it's a string
+                print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
+                      f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
+                
+        @staticmethod
+        def print_strong_counters(counters: List[Dict]):
+            """Print strong counters"""
+            print(f"\n=== STRONG COUNTERS (Easiest Matchups) ===")
+            for i, counter in enumerate(counters[:10], 1):
+                champion_name = str(counter['champion'])  # Ensure it's a string
+                print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
+                      f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
+
+        @staticmethod
+        async def analyze_champion(champion: str, lane: str):
+            """Main testing function to analyze a champion"""
+            print(f"Fetching {champion} analysis data from OP.GG API...")
             
-            if 'error' in data:
-                print(f"Error: {data['error']}")
-                return
+            async with OpGGAPI() as api:
+                data = await api.get_champion_analysis(champion.upper(), lane.upper())
+                
+                if 'error' in data:
+                    print(f"Error: {data['error']}")
+                    return
+                
+                if 'data' not in data or 'data' not in data['data']:
+                    print("No valid data received")
+                    return
+                
+                # Create analyzer
+                analyzer = ChampionAnalyzer(data)
+                
+                # Get and print ALL stats
+                print("="*60)
+                print(f"COMPLETE ANALYSIS FOR {champion.upper()} {lane.upper()}")
+                print("="*60)
+                
+                # Basic stats
+                basic_stats = analyzer.get_basic_stats()
+                TestingUtils.TestChampionAnalysis.print_basic_stats(basic_stats)
+                
+                # Position stats
+                position_stats = analyzer.get_position_stats()
+                TestingUtils.TestChampionAnalysis.print_position_stats(position_stats)
+                
+                # Summoner spells
+                summoner_spells = analyzer.get_summoner_spells()
+                TestingUtils.TestChampionAnalysis.print_summoner_spells(summoner_spells)
+                
+                # Items
+                core_items = analyzer.get_core_items()
+                TestingUtils.TestChampionAnalysis.print_core_items(core_items)
+                
+                boots = analyzer.get_boots()
+                TestingUtils.TestChampionAnalysis.print_boots(boots)
+                
+                starter_items = analyzer.get_starter_items()
+                TestingUtils.TestChampionAnalysis.print_starter_items(starter_items)
+                
+                final_items = analyzer.get_final_items()
+                TestingUtils.TestChampionAnalysis.print_final_items(final_items)
+                
+                # Runes
+                rune_pages = analyzer.get_rune_pages()
+                TestingUtils.TestChampionAnalysis.print_rune_pages(rune_pages)
+                
+                runes = analyzer.get_runes()
+                TestingUtils.TestChampionAnalysis.print_runes(runes)
+                
+                # Skills
+                skill_masteries = analyzer.get_skill_masteries()
+                TestingUtils.TestChampionAnalysis.print_skill_masteries(skill_masteries)
+                
+                skill_orders = analyzer.get_skill_orders()
+                TestingUtils.TestChampionAnalysis.print_skill_orders(skill_orders)
+                
+                # Performance metrics
+                game_length_performance = analyzer.get_game_length_performance()
+                TestingUtils.TestChampionAnalysis.print_game_length_performance(game_length_performance)
+                
+                trends = analyzer.get_trends()
+                TestingUtils.TestChampionAnalysis.print_trends(trends)
+                  # Counters
+                weak_counters = analyzer.get_weak_counters()
+                TestingUtils.TestChampionAnalysis.print_weak_counters(weak_counters)
+                
+                strong_counters = analyzer.get_strong_counters()
+                TestingUtils.TestChampionAnalysis.print_strong_counters(strong_counters)
+                print("="*60)
+                print("ANALYSIS COMPLETE")
+                print("="*60)
+
+    class TestChampionMetadata:
+        """Testing utilities for ChampionMetadata"""
+        
+        @staticmethod
+        def print_champion_info(info: Dict):
+            """Print champion basic information"""
+            print(f"\n=== {info['champion']} CHAMPION INFO ===")
+            print(f"ID: {info['id']}")
+            print(f"Key: {info['key']}")
+            print(f"Name: {info['name']}")
+            print(f"Resource: {info['resource']}")
+            print(f"Tags: {', '.join(info['tags'])}")
             
-            if 'data' not in data or 'data' not in data['data']:
-                print("No valid data received")
-                return
+            # Print difficulty info
+            difficulty = info['difficulty_info']
+            if len(difficulty) >= 4:
+                print(f"Difficulty - Attack: {difficulty[0]}/10, Defense: {difficulty[1]}/10, Magic: {difficulty[2]}/10, Overall: {difficulty[3]}/10")
+
+        @staticmethod
+        def print_abilities(abilities: List[Dict]):
+            """Print champion abilities with detailed numerical data"""
+            print(f"\n=== ABILITIES ===")
+            for ability in abilities:
+                print(f"\n{ability['key']}: {ability['name']}")
+                if ability['description']:
+                    # Truncate long descriptions
+                    desc = ability['description'][:200] + "..." if len(ability['description']) > 200 else ability['description']
+                    print(f"  Description: {desc}")
+                if ability.get('max_rank'):
+                    print(f"  Max Rank: {ability['max_rank']}")
+                
+                # Print detailed numerical data if available
+                if ability.get('range'):
+                    ranges = ability['range']
+                    if len(ranges) == 1:
+                        print(f"  Range: {ranges[0]}")
+                    else:
+                        print(f"  Range: {'/'.join(map(str, ranges))}")
+                
+                if ability.get('cooldown'):
+                    cooldowns = ability['cooldown']
+                    if len(cooldowns) == 1:
+                        print(f"  Cooldown: {cooldowns[0]}s")
+                    else:
+                        print(f"  Cooldown: {'/'.join(map(str, cooldowns))}s")
+                
+                if ability.get('cooldown_exact') and ability.get('cooldown_exact') != ability.get('cooldown'):
+                    exact_cooldowns = ability['cooldown_exact']
+                    if len(exact_cooldowns) == 1:
+                        print(f"  Exact Cooldown: {exact_cooldowns[0]}s")
+                    else:
+                        print(f"  Exact Cooldown: {'/'.join(map(str, exact_cooldowns))}s")
+                
+                if ability.get('cost'):
+                    costs = ability['cost']
+                    if len(costs) == 1:
+                        print(f"  Cost: {costs[0]}")
+                    else:
+                        print(f"  Cost: {'/'.join(map(str, costs))}")
+                
+                # Print enhanced tooltip if available and different from description
+                if ability.get('tooltip') and ability['tooltip'] != ability.get('description', ''):
+                    tooltip = ability['tooltip'][:300] + "..." if len(ability['tooltip']) > 300 else ability['tooltip']
+                    print(f"  Enhanced Tooltip: {tooltip}")
+
+        @staticmethod
+        def print_champion_stats(stats: Dict):
+            """Print champion base stats"""
+            print(f"\n=== BASE STATS ===")
+            print(f"Health: {stats['hp']} (+{stats['hp_per_level']} per level)")
+            print(f"Mana/Energy: {stats['mp']} (+{stats['mp_per_level']} per level)")
+            print(f"Health Regen: {stats['hp_regen']} (+{stats['hp_regen_per_level']} per level)")
+            print(f"Mana Regen: {stats['mp_regen']} (+{stats['mp_regen_per_level']} per level)")
+            print(f"Armor: {stats['armor']} (+{stats['armor_per_level']} per level)")
+            print(f"Magic Resist: {stats['magic_resist']} (+{stats['magic_resist_per_level']} per level)")
+            print(f"Attack Damage: {stats['attack_damage']} (+{stats['attack_damage_per_level']} per level)")
+            print(f"Attack Speed: {stats['attack_speed']} (+{stats['attack_speed_per_level']}% per level)")
+            print(f"Attack Range: {stats['attack_range']}")
+            print(f"Move Speed: {stats['move_speed']}")
+            print(f"Crit: {stats['crit']} (+{stats['crit_per_level']} per level)")
+
+        @staticmethod
+        def print_tips(tips: Dict):
+            """Print playing tips"""
+            print(f"\n=== TIPS ===")
+            if tips['ally']:
+                print("Playing as:")
+                for i, tip in enumerate(tips['ally'][:3], 1):  # Limit to 3 tips
+                    print(f"  {i}. {tip}")
             
-            # Create analyzer
-            analyzer = ChampionAnalyzer(data)
+            if tips['enemy']:
+                print("\nPlaying against:")
+                for i, tip in enumerate(tips['enemy'][:3], 1):  # Limit to 3 tips
+                    print(f"  {i}. {tip}")
+
+        @staticmethod
+        def print_difficulty_info(difficulty: Dict):
+            """Print difficulty information"""
+            print(f"\n=== DIFFICULTY INFO ===")
+            print(f"Attack: {difficulty['attack']}/10")
+            print(f"Defense: {difficulty['defense']}/10")
+            print(f"Magic: {difficulty['magic']}/10")
+            print(f"Overall Difficulty: {difficulty['difficulty']}/10")
+
+        @staticmethod
+        def print_counters_info(counters: Dict):
+            """Print counter information"""
+            print(f"\n=== COUNTERS ===")
+            if counters['strong_against']:
+                print("Strong against:")
+                for champion in counters['strong_against']:
+                    print(f"  - {champion}")
             
-            # Get and print ALL stats
-            print("="*60)
-            print(f"COMPLETE ANALYSIS FOR {champion.upper()} {lane.upper()}")
-            print("="*60)
+            if counters['weak_against']:
+                print("Weak against:")
+                for champion in counters['weak_against']:
+                    print(f"  - {champion}")
+
+        @staticmethod
+        def print_strengths_weaknesses(data: Dict):
+            """Print strengths and weaknesses"""
+            print(f"\n=== STRENGTHS & WEAKNESSES ===")
+            if data['strengths']:
+                print("Strengths:")
+                for strength in data['strengths']:
+                    print(f"  + {strength}")
             
-            # Basic stats
-            basic_stats = analyzer.get_basic_stats()
-            TestingUtils.print_basic_stats(basic_stats)
+            if data['weaknesses']:
+                print("Weaknesses:")
+                for weakness in data['weaknesses']:
+                    print(f"  - {weakness}")
+
+        @staticmethod
+        async def analyze_champion_metadata(champion: str):
+            """Main testing function to analyze champion metadata"""
+            print(f"Fetching {champion} metadata from OP.GG API...")
             
-            # Position stats
-            position_stats = analyzer.get_position_stats()
-            TestingUtils.print_position_stats(position_stats)
-            
-            # Summoner spells
-            summoner_spells = analyzer.get_summoner_spells()
-            TestingUtils.print_summoner_spells(summoner_spells)
-            
-            # Items
-            core_items = analyzer.get_core_items()
-            TestingUtils.print_core_items(core_items)
-            
-            boots = analyzer.get_boots()
-            TestingUtils.print_boots(boots)
-            
-            starter_items = analyzer.get_starter_items()
-            TestingUtils.print_starter_items(starter_items)
-            
-            final_items = analyzer.get_final_items()
-            TestingUtils.print_final_items(final_items)
-            
-            # Runes
-            rune_pages = analyzer.get_rune_pages()
-            TestingUtils.print_rune_pages(rune_pages)
-            
-            runes = analyzer.get_runes()
-            TestingUtils.print_runes(runes)
-            
-            # Skills
-            skill_masteries = analyzer.get_skill_masteries()
-            TestingUtils.print_skill_masteries(skill_masteries)
-            
-            skill_orders = analyzer.get_skill_orders()
-            TestingUtils.print_skill_orders(skill_orders)
-            
-            # Performance metrics
-            game_length_performance = analyzer.get_game_length_performance()
-            TestingUtils.print_game_length_performance(game_length_performance)
-            
-            trends = analyzer.get_trends()
-            TestingUtils.print_trends(trends)
-            
-            # Counters
-            weak_counters = analyzer.get_weak_counters()
-            TestingUtils.print_weak_counters(weak_counters)
-            
-            strong_counters = analyzer.get_strong_counters()
-            TestingUtils.print_strong_counters(strong_counters)
-            
-            print("="*60)
-            print("ANALYSIS COMPLETE")
-            print("="*60)
-            
-            return analyzer
+            async with OpGGAPI() as api:
+                data = await api.get_champion_metadata(champion.upper())
+                
+                if 'error' in data:
+                    print(f"Error: {data['error']}")
+                    return
+                
+                # Create metadata analyzer
+                metadata = ChampionMetadata(data)
+                
+                print("="*60)
+                print(f"METADATA ANALYSIS FOR {champion.upper()}")
+                print("="*60)
+                  # Champion info
+                champion_info = metadata.get_champion_info()
+                TestingUtils.TestChampionMetadata.print_champion_info(champion_info)
+                
+                # Abilities
+                abilities = metadata.get_abilities()
+                TestingUtils.TestChampionMetadata.print_abilities(abilities)
+                
+                # Stats
+                stats = metadata.get_champion_stats()
+                TestingUtils.TestChampionMetadata.print_champion_stats(stats)
+                
+                # Tips
+                tips = metadata.get_tips()
+                TestingUtils.TestChampionMetadata.print_tips(tips)
+                
+                # Difficulty info
+                difficulty = metadata.get_difficulty_info()
+                TestingUtils.TestChampionMetadata.print_difficulty_info(difficulty)
+                
+                print("="*60)
+                print("METADATA ANALYSIS COMPLETE")
+                print("="*60)
 
 # ========================================
 # MAIN EXECUTION (TESTING ONLY)
 # ========================================
 if __name__ == "__main__":
-    # Test API
-    asyncio.run(TestingUtils.analyze_champion("zed", "mid"))
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Test OP.GG API')
+    parser.add_argument('--mode', choices=['analysis', 'metadata', 'both'], default='both', 
+                       help='What to test: analysis, metadata, or both')
+    parser.add_argument('--champion', default='zed', help='Champion name')
+    parser.add_argument('--lane', default='mid', help='Lane for analysis mode')
+    
+    args = parser.parse_args()
+    
+    async def main():
+        if args.mode in ['analysis', 'both']:
+            await TestingUtils.TestChampionAnalysis.analyze_champion(args.champion, args.lane)
+            
+        if args.mode in ['metadata', 'both']:
+            if args.mode == 'both':
+                print("\n" + "="*80 + "\n")
+            await TestingUtils.TestChampionMetadata.analyze_champion_metadata(args.champion)
+    
+    asyncio.run(main())
