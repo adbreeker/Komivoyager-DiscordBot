@@ -16,7 +16,7 @@ class OpGGAPI:
         if self.session:
             await self.session.close()
     
-    async def get_champion_data(self, champion_name: str, lane: str = "mid") -> Dict:
+    async def get_champion_data(self, champion_name: str, lane: str) -> Dict:
         payload = {
             "jsonrpc": "2.0",
             "method": "tools/call",
@@ -24,7 +24,8 @@ class OpGGAPI:
                 "name": "lol-champion-analysis",
                 "arguments": {
                     "champion": champion_name,
-                    "position": lane
+                    "position": lane,
+                    "game_mode": "RANKED",
                 }
             }
         }
@@ -519,7 +520,7 @@ def print_strong_counters(counters: List[Dict]):
         print(f"{i:2d}. {champion_name:<15} - {counter['win_rate']*100:5.1f}% WR "
               f"({counter['wins']:,}W/{counter['losses']:,}L from {counter['games_played']:,} games)")
 
-async def analyze_champion(champion: str, lane: str = "mid"):
+async def analyze_champion(champion: str, lane: str):
     """Main function to analyze a champion"""
     print(f"Fetching {champion} data from OP.GG API...")
     
