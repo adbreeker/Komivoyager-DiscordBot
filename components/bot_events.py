@@ -12,7 +12,7 @@ def setup_events(bot):
 
     @bot.event
     async def on_message(message):
-        if message.author == bot.user:
+        if message.author == bot.user and not message.flags.ephemeral:
             await message.add_reaction('🗑️')
             return
 
@@ -63,7 +63,8 @@ def setup_events(bot):
 
             if after.channel is None and voice_client:
                 print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] {member.name} left from {voice_client.channel.name}")
-                await voice_transcriber.stop_recording(voice_client, guild_id)
+                if voice_transcriber.is_transcribing(guild_id):
+                    await voice_transcriber.stop_recording(voice_client, guild_id)
 
         # user state changes
         elif member is not bot.user:
@@ -77,7 +78,7 @@ def setup_events(bot):
         if voice_client and voice_client.channel is not None:
             non_bot_members = [m for m in voice_client.channel.members if not m.bot]
             if len(non_bot_members) == 0:
-                await asyncio.sleep(1)
+                await asyncio.sleep(3)
                 non_bot_members = [m for m in voice_client.channel.members if not m.bot]
                 if len(non_bot_members) == 0:
                     await voice_client.disconnect()
