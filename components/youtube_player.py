@@ -5,6 +5,7 @@ import imageio_ffmpeg
 from discord import FFmpegPCMAudio, PCMVolumeTransformer
 import components.audio_manager as audio_mgr
 from datetime import datetime
+import time
 
 # Get bundled FFmpeg executable
 ffmpeg_executable = imageio_ffmpeg.get_ffmpeg_exe()
@@ -30,6 +31,61 @@ ffmpeg_options = {
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
+
+class YTAudio:
+    def __init__(self, source, data, time_played=0):
+        self.source = source
+        self.data = data  # Store the full YouTube data
+        self.title = data.get('title')
+        self.url = data.get('url')  # This is the stream URL
+        self.webpage_url = data.get('webpage_url')  # This is the original YouTube URL
+        self.duration = data.get('duration', 0)
+        self.uploader = data.get('uploader')
+        self.time_played = time_played
+        self.start_time = time.time()
+        self.is_paused = False
+    
+    def pause(self):
+        """Pause and update time_played"""
+        if not self.is_paused and self.start_time:
+            self.time_played += time.time() - self.start_time
+            self.is_paused = True
+            self.start_time = None
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Yt audio paused at {self.time_played:.1f}s")
+
+    def get_time_played(self):
+        """Get current playback time"""
+        if self.is_paused or not self.start_time:
+            return self.time_played
+        return self.time_played + (time.time() - self.start_time)
+
+    async def resume(self, voice_client):
+        """Resume playback from current position"""
+        current_time = self.get_time_played()
+        seek_time = max(0, min(current_time, self.duration-1))
+
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Yt audio resuming from {seek_time:.1f}s")
+        
+        try:
+            # Create new source with seek
+            seek_options = ffmpeg_options.copy()
+            if seek_time > 0:
+                seek_options['before_options'] = f'-ss {seek_time} ' + seek_options.get('before_options', '')
+            
+            # Use the original stream URL from data
+            filename = self.data['url']
+            
+            source = FFmpegPCMAudio(
+                filename,
+                executable=ffmpeg_executable,
+                **seek_options
+            )
+
+            await play(voice_client, voice_client.guild.id, YTDLSource(source, data=self.data), start_time=seek_time)
+
+        except Exception as e:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error resuming: {e}")
+            return False
 
 class YTDLSource(PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
@@ -60,28 +116,31 @@ class YTDLSource(PCMVolumeTransformer):
         
         return cls(source, data=data)
     
-async def play(voice_client, guild_id, source):
+async def play(voice_client, guild_id, source, start_time=0):
     """Play a song in the voice channel"""
     try:            
-            # Set volume if specified
+        # Set volume if specified
         if guild_id in audio_mgr.music_volumes:
             source.volume = audio_mgr.music_volumes[guild_id]
 
         # Stop whatever is playing
         audio_mgr.stop_audio(voice_client)
-        audio_mgr.current_youtube_players[guild_id] = source
+        
+        # Create YTAudio with proper data
+        yt_audio = YTAudio(source, source.data, time_played=start_time)
+        audio_mgr.current_youtube_players[guild_id] = yt_audio
         loop = asyncio.get_running_loop()
 
         def after_playing(error):
             if error:
                 print(f'[ERROR - {datetime.now().strftime("%H:%M:%S")}] Player error: {error}')
             # Only proceed if this source is still the current one
-            if audio_mgr.current_youtube_players.get(guild_id) == source:
+            if audio_mgr.current_youtube_players.get(guild_id) == yt_audio:
                 audio_mgr.current_youtube_players.pop(guild_id, None)
-                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Launching play_next() after {source.title}")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Launching play_next() after {yt_audio.title}")
                 fut = asyncio.run_coroutine_threadsafe(play_next(voice_client, guild_id), loop)
             else:
-                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Skipping callback - source {source.title} is no longer current")
+                print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Skipping callback - {yt_audio.title} is no longer current")
 
         voice_client.play(source, after=after_playing)
     except Exception as e:
@@ -141,11 +200,20 @@ def clear_queue(guild_id):
         audio_mgr.music_queues[guild_id] = []
 
 def get_current_song_info(guild_id):
-    """Get currently playing song"""
-    source = audio_mgr.current_youtube_players.get(guild_id)
-    if source:
-        return source.title, source.uploader
-    return None, None
+    """Get currently playing song with timing info"""
+    yt_audio = audio_mgr.current_youtube_players.get(guild_id)
+    if yt_audio:
+        def format_time(seconds):
+            """Format seconds to MM:SS"""
+            if seconds is None:
+                return "??:??"
+            minutes = int(seconds // 60)
+            seconds = int(seconds % 60)
+            return f"{minutes:02d}:{seconds:02d}"
+
+        current_time = yt_audio.get_time_played()
+        return yt_audio.title, yt_audio.uploader, format_time(current_time), format_time(yt_audio.duration)
+    return None, None, None, None
 
 def set_volume(guild_id, volume):
     """Set volume for current and future songs"""

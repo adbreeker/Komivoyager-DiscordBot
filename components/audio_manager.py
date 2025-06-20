@@ -52,7 +52,10 @@ def stop_audio(voice_client):
                 source = storage.get(guild_id)
                 if source:
                     try:
-                        source.cleanup()
+                        if storage is current_youtube_players:
+                            source.source.cleanup()
+                        else:
+                            source.cleanup()
                     except Exception as e:
                         print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Error stopping source: {e}")
             # Force stop by setting internal state (this is a workaround)
@@ -61,6 +64,25 @@ def stop_audio(voice_client):
     else:
         # If not transcribing, use the normal stop method
         voice_client.stop()
+
+def pause_music(voice_client):
+    guild_id = voice_client.guild.id
+    if voice_client.is_playing() and is_playing_youtube(guild_id):
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Pausing yt music in {voice_client.channel.name}")
+        current_youtube_players[guild_id].pause()
+        voice_client.pause()
+    else:
+        print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Cannot pause yt music, not playing YouTube or no source found in {voice_client.channel.name}")
+
+async def resume_music(voice_client):
+    guild_id = voice_client.guild.id
+    if voice_client.is_paused():
+        voice_client.resume()
+    else:
+        if current_youtube_players.get(guild_id):
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Resuming yt music in {voice_client.channel.name}")
+            await current_youtube_players[guild_id].resume(voice_client)
+
 
 async def play_background(voice_client):
     ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
@@ -119,7 +141,7 @@ async def say_text(voice_client, text, language):
     
     try:
         # Create TTS using gTTS
-        tts = gTTS(text=text, lang=language, slow=False, tld='us')  # Use first 2 chars of language code
+        tts = gTTS(text=text, lang=language, slow=False, tld='us')
         
         # Create in-memory buffer
         mp3_buffer = io.BytesIO()
@@ -128,13 +150,15 @@ async def say_text(voice_client, text, language):
         tts.write_to_fp(mp3_buffer)
         mp3_buffer.seek(0)
 
-        stop_audio(voice_client)  # Stop any currently playing audio
+        # Check if YouTube music is playing and pause it
+        was_playing_youtube = is_playing_youtube(guild_id) and voice_client.is_playing()
+        if was_playing_youtube:
+            pause_music(voice_client)
         
         # Play the TTS audio from memory
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-        volume = music_volumes.get(guild_id, 0.5)  # Use music volume for TTS
+        volume = music_volumes.get(guild_id, 0.5)
         
-        # Use FFmpeg with pipe input for in-memory audio
         ffmpeg_source = discord.FFmpegPCMAudio(
             mp3_buffer,
             executable=ffmpeg_path,
@@ -143,11 +167,14 @@ async def say_text(voice_client, text, language):
         source = discord.PCMVolumeTransformer(ffmpeg_source, volume=volume)
         current_voice_sources[guild_id] = source
         
+        loop = asyncio.get_running_loop()
         def after_callback(e):
             # Clean up
             current_voice_sources.pop(guild_id, None)
             mp3_buffer.close()
-            
+            # Resume YouTube music if it was playing before
+            if was_playing_youtube:
+                asyncio.run_coroutine_threadsafe(resume_music(voice_client), loop)
             if e:
                 print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] TTS playback error: {e}")
         

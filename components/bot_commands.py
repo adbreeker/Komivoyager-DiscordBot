@@ -322,8 +322,6 @@ def setup_commands(bot):
             description=f"**{title}**",
             color=0x00ff00
         )
-        if uploader:
-            embed.add_field(name="Uploader", value=uploader, inline=True)
         await interaction.followup.send(embed=embed)
 
 #enqueue command (add to queue) ----------------------------------------------------------------------------------------------------- enqueue command
@@ -377,15 +375,17 @@ def setup_commands(bot):
         print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_queue' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
         
         guild_id = interaction.guild.id
-        current_title, current_uploader = yt_player.get_current_song_info(guild_id)
+        current_title, current_uploader, current_time, duration = yt_player.get_current_song_info(guild_id)
         queue_list = yt_player.get_queue(guild_id)
         
         embed = discord.Embed(title="🎵 Music Queue", color=0x00ff00)
         
         if current_title:
             now_playing = f"**{current_title}**"
-            if current_uploader:
-                now_playing += f"\nby {current_uploader}"
+            if current_time is not None and duration:
+                time_display = f"{current_time}/{duration}"
+                now_playing += f"\n`{time_display}`"
+
             embed.add_field(name="🎶 Now Playing", value=now_playing, inline=False)
         
         if queue_list:
@@ -414,7 +414,7 @@ def setup_commands(bot):
         print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_nowplaying' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id})")
         
         guild_id = interaction.guild.id
-        current_title, current_uploader = yt_player.get_current_song_info(guild_id)
+        current_title, current_uploader, current_time, duration = yt_player.get_current_song_info(guild_id)
         
         if current_title:
             embed = discord.Embed(
@@ -422,6 +422,11 @@ def setup_commands(bot):
                 description=f"**{current_title}**",
                 color=0x00ff00
             )
+
+            if current_time is not None and duration:
+                time_display = f"{current_time} / {duration}"
+                embed.add_field(name="⏱️ Progress", value=f"`{time_display}`", inline=False)
+
             if current_uploader:
                 embed.add_field(name="Uploader", value=current_uploader, inline=True)
             
