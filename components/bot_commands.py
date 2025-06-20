@@ -119,7 +119,7 @@ def setup_commands(bot):
     @app_commands.describe(message="The message to echo")
     async def echo(interaction: discord.Interaction, message: str):
         print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Command 'kv_echo' used by {interaction.user.name} ({interaction.user.id}) in guild {interaction.guild.name} ({interaction.guild.id}) with message: '{message}'")
-        await interaction.response.send_message("✓", ephemeral=True, delete_after=0.1)
+        await interaction.response.send_message("✓", ephemeral=True, delete_after=0)
         await interaction.channel.send(message)
 
 #demokracja command ----------------------------------------------------------------------------------------------------- demokracja command
@@ -188,7 +188,7 @@ def setup_commands(bot):
             return
         
         await audio_mgr.say_text(voice_client, text, language.lower())
-        await interaction.response.send_message("✓", ephemeral=True, delete_after=0.1)
+        await interaction.response.send_message("✓", ephemeral=True, delete_after=0)
 
 #transcript command ----------------------------------------------------------------------------------------------------- transcript command
     @bot.tree.command(name="kv_transcript", description="Enable or disable voice transcription.")
