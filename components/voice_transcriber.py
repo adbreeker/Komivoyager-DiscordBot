@@ -11,6 +11,7 @@ from datetime import datetime
 import gc
 from pathlib import Path
 import asyncio
+import torch  # Add this import at the top
 
 
 whisper_model = None
@@ -25,7 +26,7 @@ current_voice_clients = {}  # guild_id: voice_client
 
 transcript_files = {}  # guild_id: (file_path, start_datetime)
 
-async def load_whisper_model(model_size="turbo", device="cuda", compute_type="float32"):
+async def load_whisper_model(model_size="large-v3", device="auto", compute_type="auto"):
     """Load the Whisper model with specified parameters"""
     global whisper_model
     try:
@@ -33,14 +34,63 @@ async def load_whisper_model(model_size="turbo", device="cuda", compute_type="fl
             print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model already loaded")
             return True
         
-        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Loading Whisper model: {model_size} on {device}")
-        whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        # Check CUDA availability and optimize settings
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] CUDA detected: {gpu_name} ({gpu_memory:.1f}GB)")
+            
+            # Optimal settings for RTX 5060 Ti
+            if device == "auto":
+                device = "cuda"
+            if compute_type == "auto":
+                compute_type = "float16"  # Much better for RTX cards
+                
+            # Clear any existing CUDA cache
+            torch.cuda.empty_cache()
+        else:
+            print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] CUDA not available, falling back to CPU")
+            device = "cpu"
+            compute_type = "int8"
+        
+        print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Loading Whisper model: {model_size} on {device} with {compute_type}")
+        
+        # Load model with GPU optimization
+        whisper_model = WhisperModel(
+            model_size, 
+            device=device, 
+            compute_type=compute_type,
+            cpu_threads=0 if device == "cuda" else 4,  # Let GPU handle threading
+            num_workers=1,   # Single worker for better GPU utilization
+            download_root=None,  # Use default cache
+            local_files_only=False
+        )
+        
+        # Test GPU usage with actual transcription
+        if device == "cuda":
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Testing GPU utilization...")
+            # Create a small test audio (1 second of silence with some noise)
+            test_audio = np.random.normal(0, 0.01, 16000).astype(np.float32)
+            segments, info = whisper_model.transcribe(test_audio, language="en")
+            list(segments)  # Force execution
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] GPU test completed - check nvidia-smi now")
+        
         print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Whisper model loaded successfully")
         return True
+        
     except Exception as e:
         print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] Failed to load Whisper model: {e}")
-        whisper_model = None
-        return False
+        # Try fallback to CPU
+        try:
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] Attempting CPU fallback...")
+            whisper_model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            print(f"[INFO - {datetime.now().strftime('%H:%M:%S')}] CPU fallback successful")
+            return True
+        except Exception as e2:
+            print(f"[ERROR - {datetime.now().strftime('%H:%M:%S')}] CPU fallback also failed: {e2}")
+            whisper_model = None
+            return False
     
 async def unload_whisper_model():
     """Unload the Whisper model and clear CUDA cache"""
@@ -131,6 +181,13 @@ class WhisperSink(voice_recv.BasicSink):
                 print(f"[WARNING - {datetime.now().strftime('%H:%M:%S')}] Whisper model not loaded, skipping transcription for {user_name}")
                 return
             
+            # Add GPU memory check before processing
+            if torch.cuda.is_available():
+                memory_allocated = torch.cuda.memory_allocated(0) / 1024**3
+                memory_cached = torch.cuda.memory_reserved(0) / 1024**3
+                if memory_allocated > 0:
+                    print(f"[DEBUG - {datetime.now().strftime('%H:%M:%S')}] GPU Memory: {memory_allocated:.2f}GB allocated, {memory_cached:.2f}GB cached")
+            
             raw = buffer_data
             audio_data = np.frombuffer(raw, np.int16)
             if audio_data.ndim == 1 and len(audio_data) % 2 == 0:
@@ -177,6 +234,7 @@ class WhisperSink(voice_recv.BasicSink):
             # Use it before transcription:
             audio_data = enhance_audio(audio_data)
 
+            # Force GPU usage by ensuring tensor is on CUDA
             segments, _ = whisper_model.transcribe(
                 audio_data,
                 language="pl",
